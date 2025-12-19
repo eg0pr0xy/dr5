@@ -6,6 +6,7 @@ export class KHSAudioEngine {
   private bus: GainNode;
   private lpf: BiquadFilterNode;
   private hpf: BiquadFilterNode;
+  private comp: DynamicsCompressorNode;
   private spectralShaper: BiquadFilterNode[] = [];
   private partials: { osc: OscillatorNode; gain: GainNode; pan: StereoPannerNode; baseFreq: number }[] = [];
   private radio = { element: null as HTMLAudioElement | null, gain: null as GainNode | null, filter: null as BiquadFilterNode | null, analyser: null as AnalyserNode | null };
@@ -25,15 +26,22 @@ export class KHSAudioEngine {
     this.bus.gain.setValueAtTime(1.0, audioContext.currentTime);
     this.lpf = audioContext.createBiquadFilter();
     this.lpf.type = 'lowpass';
-    this.lpf.frequency.setValueAtTime(1400, audioContext.currentTime);
+    this.lpf.frequency.setValueAtTime(550, audioContext.currentTime);
     this.lpf.Q.setValueAtTime(0.707, audioContext.currentTime);
     this.hpf = audioContext.createBiquadFilter();
     this.hpf.type = 'highpass';
     this.hpf.frequency.setValueAtTime(35, audioContext.currentTime);
-    // chain: all voices -> bus -> lpf -> hpf -> mainGain -> destination
+    this.comp = audioContext.createDynamicsCompressor();
+    this.comp.threshold.setValueAtTime(-24, audioContext.currentTime);
+    this.comp.knee.setValueAtTime(30, audioContext.currentTime);
+    this.comp.ratio.setValueAtTime(6, audioContext.currentTime);
+    this.comp.attack.setValueAtTime(0.3, audioContext.currentTime);
+    this.comp.release.setValueAtTime(0.25, audioContext.currentTime);
+    // chain: all voices -> bus -> lpf -> hpf -> comp -> mainGain -> destination
     this.bus.connect(this.lpf);
     this.lpf.connect(this.hpf);
-    this.hpf.connect(this.mainGain);
+    this.hpf.connect(this.comp);
+    this.comp.connect(this.mainGain);
     this.mainGain.connect(audioContext.destination);
     this.buildGraph();
   }
@@ -42,24 +50,24 @@ export class KHSAudioEngine {
 
   private buildGraph() {
     const ctx = this.audioContext;
-    const roomModes = [110, 220, 480, 900, 1400];
+    const roomModes = [86, 172, 344, 516, 688];
     this.spectralShaper = roomModes.map(freq => {
       const f = ctx.createBiquadFilter();
       f.type = 'bandpass';
       f.frequency.setValueAtTime(freq, ctx.currentTime);
-      f.Q.setValueAtTime(3, ctx.currentTime);
+      f.Q.setValueAtTime(1.5, ctx.currentTime);
       f.connect(this.bus);
       return f;
     });
     const RATIOS = [1, 1.0679, 1.125, 1.1892, 1.25, 1.3333, 1.4142, 1.4983, 1.618, 1.7818, 1.88, 2.0, 2.13, 2.25];
     this.partials = RATIOS.map((ratio) => {
       const osc = ctx.createOscillator(); const gain = ctx.createGain(); const pan = ctx.createStereoPanner();
-      const base = 43.2 * ratio; osc.type = 'sine'; osc.frequency.setValueAtTime(base, ctx.currentTime); gain.gain.setValueAtTime(0.004, ctx.currentTime);
+      const base = 43.2 * ratio; osc.type = 'sine'; osc.frequency.setValueAtTime(base, ctx.currentTime); gain.gain.setValueAtTime(0.0025, ctx.currentTime);
       osc.connect(gain); gain.connect(pan); this.spectralShaper.forEach(f => pan.connect(f)); osc.start(); return { osc, gain, pan, baseFreq: base };
     });
     // Radio chain
     const radioGain = ctx.createGain(); radioGain.gain.setValueAtTime(0.0, ctx.currentTime);
-    const radioFilter = ctx.createBiquadFilter(); radioFilter.type = 'bandpass';
+    const radioFilter = ctx.createBiquadFilter(); radioFilter.type = 'lowpass'; radioFilter.frequency.setValueAtTime(800, ctx.currentTime); radioFilter.Q.setValueAtTime(0.707, ctx.currentTime);
     const radioAnalyser = ctx.createAnalyser(); radioAnalyser.fftSize = 512;
     try {
       const el = new Audio('https://dradio-edge-209a-fra-lg-cdn.cast.addradio.de/dradio/dlf/live/mp3/128/stream.mp3');
@@ -79,8 +87,11 @@ export class KHSAudioEngine {
     const peaks = 1 + Math.floor(Math.random() * 3);
     for (let k = 0; k < peaks; k++) { const c = Math.floor(Math.random() * 14); const s = 0.8 + Math.random() * 2.5; for (let i = 0; i < 14; i++) { const d = (i - c) / s; target[i] += Math.exp(-0.5 * d * d); } }
     const max = Math.max(0.0001, ...target); for (let i = 0; i < 14; i++) target[i] /= max;
-    const targetGains = target.map(v => 0.003 + v * 0.06);
-    const driftFreqs = this.partials.map(p => p.baseFreq * (1 + (Math.random() * 0.06 - 0.03)));
+    const targetGains = target.map((v, i) => {
+      const tilt = 1 / (1 + i * 0.25);
+      return tilt * (0.003 + v * 0.05);
+    });
+    const driftFreqs = this.partials.map(p => p.baseFreq * (1 + (Math.random() * 0.04 - 0.02)));
     this.partials.forEach((p, i) => {
       p.gain.gain.cancelScheduledValues(now); p.gain.gain.setValueAtTime(p.gain.gain.value, now);
       p.gain.gain.linearRampToValueAtTime(targetGains[i], now + fade);
@@ -93,7 +104,7 @@ export class KHSAudioEngine {
       const gp = this.radio.gain.gain;
       gp.cancelScheduledValues(now);
       gp.setValueAtTime(gp.value, now);
-      gp.linearRampToValueAtTime(this.radioActive ? 0.15 : 0.0, now + fade);
+      gp.linearRampToValueAtTime(this.radioActive ? 0.1 : 0.0, now + fade);
     }
     // spectral shaper gentle retune
     const shapeFreqs: number[] = []; const shapeQs: number[] = [];
@@ -125,7 +136,7 @@ export class KHSAudioEngine {
     const gp = g.gain;
     gp.cancelScheduledValues(t);
     gp.setValueAtTime(gp.value, t);
-    gp.linearRampToValueAtTime(active ? 0.15 : 0.0, t + 1);
+    gp.linearRampToValueAtTime(active ? 0.1 : 0.0, t + 1);
     try { if (active) this.radio.element?.play(); else this.radio.element?.pause(); } catch {}
   }
 

@@ -1,210 +1,148 @@
-0001: 
-0002: import React, { useState, useEffect, useRef } from 'react';
-0003: 
-0004: interface KHSModeProps {
-0005:   audioContext: AudioContext;
-0006:   isAnimated?: boolean;
-0007: }
-0008: 
-0009: const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated }) => {
-0010:   const [spectralDensity, setSpectralDensity] = useState<number[]>(new Array(14).fill(0));
-0011:   const [activePermIndex, setActivePermIndex] = useState(0);
-0012:   const [entropyLevel, setEntropyLevel] = useState(0.2); 
-0013:   const [radioActive, setRadioActive] = useState(true);
-0014:   const [staticActive, setStaticActive] = useState(true);
-0015:   const [isSampling, setIsSampling] = useState(false);
-0016:   const [isReplaying, setIsReplaying] = useState(false);
-0017:   const [residueCount, setResidueCount] = useState(0);
-0018:   const [isFlickering, setIsFlickering] = useState(false);
-0019:   const [lockedPartials, setLockedPartials] = useState<boolean[]>(new Array(14).fill(false));
-0020:   const [radioTuning, setRadioTuning] = useState(0.5);
-0021:   const [ambientRms, setAmbientRms] = useState(0);
-0022:   const [diag, setDiag] = useState<{ active: number; centroid: number; nextShift: number; momentId: number; fadePct: number }>({ active: 0, centroid: 0, nextShift: 0, momentId: 0, fadePct: 0 });
-0023:   const momentIdRef = useRef(0);
-0024: 
-0025:   const serialMatrix = useRef<number[][]>(
-0026:     Array.from({ length: 14 }, () => Array.from({ length: 14 }, () => Math.random() > 0.5 ? 1 : 0))
-0027:   );
-0028: 
-0029:   const engineRef = useRef<{
-0030:     partials: { osc: OscillatorNode; gain: GainNode; pan: StereoPannerNode; baseFreq: number; }[];
-0031:     radio: { element: HTMLAudioElement; filter: BiquadFilterNode; gain: GainNode; analyser: AnalyserNode; source: MediaElementAudioSourceNode | null; };
-0032:     spectralShaper: BiquadFilterNode[];
-0033:     staticNoise: { whiteGain: GainNode; pinkGain: GainNode; brownGain: GainNode; };
-0034:     mainGain: GainNode;
-0035:     micAnalyser: AnalyserNode;
-0036:     moment: { id: number; startAt: number; nextAt: number; fadeDur: number; targetGains: number[]; driftFreqs: number[] };
-0037:   } | null>(null);
-0038: 
-0039:   const RATIOS = [1, 1.0679, 1.125, 1.1892, 1.25, 1.3333, 1.4142, 1.4983, 1.618, 1.7818, 1.88, 2.0, 2.13, 2.25];
-0040:   const FREQ_LABELS = ["43", "78", "120", "280", "640", "1.2K", "2.8K", "5.4K", "8.2K", "10K", "12K", "14K", "15K", "16K"];
-0041: 
-0042:   useEffect(() => {
-0043:     if (audioContext.state === 'suspended') audioContext.resume();
-0044:     const mainGain = audioContext.createGain();
-0045:     mainGain.gain.setValueAtTime(0.5, audioContext.currentTime);
-0046:     mainGain.connect(audioContext.destination);
-0047: 
-0048:     const roomModes = [110, 240, 800, 1400, 2800];
-0049:     const spectralShaper = roomModes.map(freq => {
-0050:       const f = audioContext.createBiquadFilter();
-0051:       f.type = 'bandpass';
-0052:       f.frequency.setValueAtTime(freq, audioContext.currentTime);
-0053:       f.Q.setValueAtTime(10, audioContext.currentTime);
-0054:       f.connect(mainGain);
-0055:       return f;
-0056:     });
-0057: 
-0058:     const partials = RATIOS.map((ratio) => {
-0059:       const osc = audioContext.createOscillator();
-0060:       const gain = audioContext.createGain();
-0061:       const pan = audioContext.createStereoPanner();
-0062:       const f = 43.2 * ratio;
-0063:       osc.type = 'sine';
-0064:       osc.frequency.setValueAtTime(f, audioContext.currentTime);
-0065:       gain.gain.setValueAtTime(0.008, audioContext.currentTime);
-0066:       osc.connect(gain);
-0067:       gain.connect(pan);
-0068:       spectralShaper.forEach(filter => pan.connect(filter));
-0069:       osc.start();
-0070:       return { osc, gain, pan, baseFreq: f };
-0071:     });
-0072: 
-0073:     const radioElement = new Audio("https://dradio-edge-209a-fra-lg-cdn.cast.addradio.de/dradio/dlf/live/mp3/128/stream.mp3");
-0074:     radioElement.crossOrigin = "anonymous"; radioElement.loop = true;
-0075:     const radioGain = audioContext.createGain();
-0076:     radioGain.gain.setValueAtTime(0.0, audioContext.currentTime);
-0077:     const radioFilter = audioContext.createBiquadFilter();
-0078:     radioFilter.type = 'bandpass';
-0079:     const radioAnalyser = audioContext.createAnalyser(); radioAnalyser.fftSize = 512;
-0080:     try {
-0081:       const source = audioContext.createMediaElementSource(radioElement);
-0082:       source.connect(radioAnalyser);
-0083:       radioAnalyser.connect(radioFilter);
-0084:       radioFilter.connect(radioGain);
-0085:       spectralShaper.forEach(filter => radioGain.connect(filter));
-0086:     } catch (e) {}
-0087: 
-0088:     const initialTargets = partials.map(p => p.gain.gain.value);
-0089:     engineRef.current = {
-0090:       partials,
-0091:       radio: { element: radioElement, filter: radioFilter, gain: radioGain, analyser: radioAnalyser, source: null },
-0092:       spectralShaper,
-0093:       staticNoise: { whiteGain: mainGain, pinkGain: mainGain, brownGain: mainGain },
-0094:       mainGain,
-0095:       micAnalyser: radioAnalyser,
-0096:       moment: { id: 0, startAt: audioContext.currentTime, nextAt: audioContext.currentTime + 90, fadeDur: 45, targetGains: initialTargets, driftFreqs: partials.map(p => p.baseFreq) }
-0097:     };
-0098: 
-0099:     // Visual updates (lightweight)
-0100:     const visInterval = setInterval(() => {
-0101:       if (!engineRef.current) return;
-0102:       setSpectralDensity(engineRef.current.partials.map(p => p.gain.gain.value * 1000));
-0103:       setActivePermIndex(prev => (prev + 1) % 14);
-0104:     }, 400);
-0105: 
-0106:     // Long-form moment scheduler
-0107:     const newMoment = () => {
-0108:       if (!engineRef.current) return;
-0109:       const now = audioContext.currentTime;
-0110:       // next window
-0111:       const nextIn = 60 + Math.random() * 120; // 60–180s
-0112:       const fade = 30 + Math.random() * 60; // 30–90s
-0113:       const target = new Array(14).fill(0);
-0114:       const peaks = 1 + Math.floor(Math.random() * 3); // 1–3 peaks
-0115:       for (let k = 0; k < peaks; k++) {
-0116:         const center = Math.floor(Math.random() * 14);
-0117:         const sigma = 0.8 + Math.random() * 2.5;
-0118:         for (let i = 0; i < 14; i++) {
-0119:           const d = (i - center) / sigma;
-0120:           target[i] += Math.exp(-0.5 * d * d);
-0121:         }
-0122:       }
-0123:       // normalize
-0124:       const max = Math.max(0.0001, ...target);
-0125:       for (let i = 0; i < 14; i++) target[i] /= max;
-0126:       // set target gains (quiet base + shaped)
-0127:       const targetGains = target.map(v => 0.003 + v * 0.06);
-0128:       // schedule ramps
-0129:       // frequency drift factors per moment (±3%)
-0130:       const driftFreqs = engineRef.current.partials.map(p => p.baseFreq * (1 + (Math.random() * 0.06 - 0.03)));
-0131:       engineRef.current.partials.forEach((p, i) => {
-0132:         p.gain.gain.cancelScheduledValues(now);
-0133:         p.gain.gain.setValueAtTime(p.gain.gain.value, now);
-0134:         p.gain.gain.linearRampToValueAtTime(targetGains[i], now + fade);
-0135:         // slow pan drift per moment
-0136:         const panTarget = -0.6 + Math.random() * 1.2;
-0137:         p.pan.pan.cancelScheduledValues(now);
-0138:         p.pan.pan.setValueAtTime(p.pan.pan.value, now);
-0139:         p.pan.pan.linearRampToValueAtTime(panTarget, now + fade);
-0140:         // slow frequency drift to new target
-0141:         p.osc.frequency.cancelScheduledValues(now);
-0142:         p.osc.frequency.setValueAtTime(p.osc.frequency.value, now);
-0143:         p.osc.frequency.linearRampToValueAtTime(driftFreqs[i], now + fade);
-0144:       });
-0145:       // radio bed slow fade according to radioActive state
-0146:       engineRef.current.radio.gain.cancelScheduledValues(now);
-0147:       engineRef.current.radio.gain.setValueAtTime(engineRef.current.radio.gain.gain.value, now);
-0148:       engineRef.current.radio.gain.linearRampToValueAtTime(radioActive ? 0.15 : 0.0, now + fade);
-0149: 
-0150:       const id = ++momentIdRef.current;
-0151:       engineRef.current.moment = { id, startAt: now, nextAt: now + nextIn, fadeDur: fade, targetGains, driftFreqs };
-0152:     };
-0153: 
-0154:     newMoment();
-0155:     const momentIv = setInterval(() => {
-0156:       if (!engineRef.current) return;
-0157:       const t = audioContext.currentTime;
-0158:       if (t >= engineRef.current.moment.nextAt) newMoment();
-0159:       // diagnostics update (1 Hz)
-0160:       const gains = engineRef.current.moment.targetGains;
-0161:       const freqs = engineRef.current.moment.driftFreqs;
-0162:       const sumGain = gains.reduce((a, b) => a + b, 0) || 1;
-0163:       const centroid = gains.reduce((a, g, i) => a + g * freqs[i], 0) / sumGain;
-0164:       const active = gains.filter(g => g > 0.01).length;
-0165:       const nextShift = Math.max(0, Math.ceil(engineRef.current.moment.nextAt - t));
-0166:       const fadePct = Math.max(0, Math.min(100, Math.round(((t - engineRef.current.moment.startAt) / engineRef.current.moment.fadeDur) * 100)));
-0167:       setDiag({ active, centroid, nextShift, momentId: engineRef.current.moment.id, fadePct });
-0168:     }, 1000);
-0169: 
-0170:     return () => {
-0171:       clearInterval(visInterval);
-0172:       clearInterval(momentIv);
-0173:       partials.forEach(p => p.osc.stop());
-0174:       radioElement.pause();
-0175:       mainGain.disconnect();
-0176:     };
-0177:   }, [audioContext, radioActive]);
-0178: 
-0179:   const motionClass = isAnimated ? 'animate-ui-motion' : '';
-0180: 
-0181:   return (
-0182:     <div className={`h-full flex flex-col p-6 overflow-hidden font-mono ${motionClass}`}>
-0183:       <header className="flex justify-between items-start text-[8px] opacity-40 uppercase tracking-[0.2em] mb-4 shrink-0">
-0184:         <div className={`flex flex-col gap-0.5 ${motionClass}`}>
-0185:           <span>43.2HZ_MASTER</span>
-0186:         </div>
-0187:         <div className={`text-right flex flex-col items-end ${motionClass}`}>
-0188:           <span>SERIAL_SYNC_OK</span>
-0189:         </div>
-0190:       </header>
-0191:       {/* ASCII diagnostics */}
-0192:       <div className={`text-[9px] opacity-60 uppercase tracking-[0.2em] mb-2 tabular-nums ${motionClass}`}>
-0193:         KHS_DIAG: [ MOM:{diag.momentId} ] [ FADE:{diag.fadePct}% ] [ PARTIALS:{diag.active} ] [ CENTROID:{Math.round(diag.centroid)}HZ ] [ NEXT_SHIFT:{diag.nextShift}s ]
-0194:       </div>
-0195:       <div className={`flex-1 border border-current border-opacity-10 bg-black/5 flex flex-col p-2 ${motionClass}`}>
-0196:         <div className="flex-1 grid grid-cols-14 gap-1 opacity-60">
-0197:           {serialMatrix.current.map((row, rIdx) => row.map((val, cIdx) => <div key={`${rIdx}-${cIdx}`} className={`h-full transition-all ${val === 1 ? 'bg-current' : 'border border-current opacity-5'} ${rIdx === activePermIndex ? 'opacity-100' : 'opacity-10'} ${motionClass}`} />))}
-0198:         </div>
-0199:       </div>
-0200:       <footer className="mt-auto border-t border-current border-opacity-10 pt-4 flex justify-between items-center text-[9px]">
-0201:         <div className="flex gap-4">
-0202:           <span onClick={() => setRadioActive(!radioActive)} className="cursor-pointer underline">[ DLF_FEED ]</span>
-0203:         </div>
-0204:         <div className={`opacity-30 uppercase ${motionClass}`}>STUDIO_REV: 1954</div>
-0205:       </footer>
-0206:     </div>
-0207:   );
-0208: };
-0209: 
-0210: export default KHSMode;
+import { KHSState } from '../types/audio';
+
+export class KHSAudioEngine {
+  private audioContext: AudioContext;
+  private mainGain: GainNode;
+  private bus: GainNode;
+  private lpf: BiquadFilterNode;
+  private hpf: BiquadFilterNode;
+  private comp: DynamicsCompressorNode;
+  private spectralShaper: BiquadFilterNode[] = [];
+  private partials: { osc: OscillatorNode; gain: GainNode; pan: StereoPannerNode; baseFreq: number }[] = [];
+  private radio = { element: null as HTMLAudioElement | null, gain: null as GainNode | null, filter: null as BiquadFilterNode | null, analyser: null as AnalyserNode | null };
+  private moment = { id: 0, startAt: 0, nextAt: 0, fadeDur: 45, targetGains: [] as number[], driftFreqs: [] as number[], shapeFreqs: [] as number[], shapeQs: [] as number[] };
+  private visTimer: number | null = null;
+  private momentTimer: number | null = null;
+  private diagTimer: number | null = null;
+  private onDiag?: (s: KHSState) => void;
+  private radioActive = true;
+
+  constructor(audioContext: AudioContext) {
+    this.audioContext = audioContext;
+    this.mainGain = audioContext.createGain();
+    this.mainGain.gain.setValueAtTime(0.5, audioContext.currentTime);
+    // Master bus: gentle HPF/LPF to keep ambient drone, remove harsh highs
+    this.bus = audioContext.createGain();
+    this.bus.gain.setValueAtTime(1.0, audioContext.currentTime);
+    this.lpf = audioContext.createBiquadFilter();
+    this.lpf.type = 'lowpass';
+    this.lpf.frequency.setValueAtTime(900, audioContext.currentTime);
+    this.lpf.Q.setValueAtTime(0.707, audioContext.currentTime);
+    this.hpf = audioContext.createBiquadFilter();
+    this.hpf.type = 'highpass';
+    this.hpf.frequency.setValueAtTime(35, audioContext.currentTime);
+    this.comp = audioContext.createDynamicsCompressor();
+    this.comp.threshold.setValueAtTime(-24, audioContext.currentTime);
+    this.comp.knee.setValueAtTime(30, audioContext.currentTime);
+    this.comp.ratio.setValueAtTime(6, audioContext.currentTime);
+    this.comp.attack.setValueAtTime(0.3, audioContext.currentTime);
+    this.comp.release.setValueAtTime(0.25, audioContext.currentTime);
+    // chain: all voices -> bus -> lpf -> hpf -> comp -> mainGain -> destination
+    this.bus.connect(this.lpf);
+    this.lpf.connect(this.hpf);
+    this.hpf.connect(this.comp);
+    this.comp.connect(this.mainGain);
+    this.mainGain.connect(audioContext.destination);
+    this.buildGraph();
+  }
+
+  onDiagnostics(cb: (s: KHSState) => void) { this.onDiag = cb; }
+
+  private buildGraph() {
+    const ctx = this.audioContext;
+    const roomModes = [90, 180, 360, 720, 900];
+    this.spectralShaper = roomModes.map(freq => {
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.setValueAtTime(freq, ctx.currentTime);
+      f.Q.setValueAtTime(1.5, ctx.currentTime);
+      f.connect(this.bus);
+      return f;
+    });
+    const RATIOS = [1, 1.0679, 1.125, 1.1892, 1.25, 1.3333, 1.4142, 1.4983, 1.618, 1.7818, 1.88, 2.0, 2.13, 2.25];
+    this.partials = RATIOS.map((ratio) => {
+      const osc = ctx.createOscillator(); const gain = ctx.createGain(); const pan = ctx.createStereoPanner();
+      const base = 43.2 * ratio; osc.type = 'sine'; osc.frequency.setValueAtTime(base, ctx.currentTime); gain.gain.setValueAtTime(0.003, ctx.currentTime);
+      osc.connect(gain); gain.connect(pan); this.spectralShaper.forEach(f => pan.connect(f)); osc.start(); return { osc, gain, pan, baseFreq: base };
+    });
+    // Radio chain
+    const radioGain = ctx.createGain(); radioGain.gain.setValueAtTime(0.0, ctx.currentTime);
+    const radioFilter = ctx.createBiquadFilter(); radioFilter.type = 'bandpass';
+    const radioAnalyser = ctx.createAnalyser(); radioAnalyser.fftSize = 512;
+    try {
+      const el = new Audio('https://dradio-edge-209a-fra-lg-cdn.cast.addradio.de/dradio/dlf/live/mp3/128/stream.mp3');
+      el.crossOrigin = 'anonymous'; el.loop = true; const src = ctx.createMediaElementSource(el);
+      src.connect(radioAnalyser);
+      radioAnalyser.connect(radioFilter);
+      radioFilter.connect(radioGain);
+      radioGain.connect(this.bus);
+      this.radio = { element: el, gain: radioGain, filter: radioFilter, analyser: radioAnalyser };
+    } catch { this.radio = { element: null, gain: radioGain, filter: radioFilter, analyser: radioAnalyser }; }
+  }
+
+  private scheduleNewMoment() {
+    const ctx = this.audioContext; const now = ctx.currentTime;
+    const nextIn = 60 + Math.random() * 120; const fade = 30 + Math.random() * 60;
+    const target = new Array(14).fill(0);
+    const peaks = 1 + Math.floor(Math.random() * 3);
+    for (let k = 0; k < peaks; k++) { const c = Math.floor(Math.random() * 14); const s = 0.8 + Math.random() * 2.5; for (let i = 0; i < 14; i++) { const d = (i - c) / s; target[i] += Math.exp(-0.5 * d * d); } }
+    const max = Math.max(0.0001, ...target); for (let i = 0; i < 14; i++) target[i] /= max;
+    const targetGains = target.map(v => 0.003 + v * 0.06);
+    const driftFreqs = this.partials.map(p => p.baseFreq * (1 + (Math.random() * 0.06 - 0.03)));
+    this.partials.forEach((p, i) => {
+      p.gain.gain.cancelScheduledValues(now); p.gain.gain.setValueAtTime(p.gain.gain.value, now);
+      p.gain.gain.linearRampToValueAtTime(targetGains[i], now + fade);
+      const panTarget = -0.6 + Math.random() * 1.2; p.pan.pan.cancelScheduledValues(now); p.pan.pan.setValueAtTime(p.pan.pan.value, now);
+      p.pan.pan.linearRampToValueAtTime(panTarget, now + fade);
+      p.osc.frequency.cancelScheduledValues(now); p.osc.frequency.setValueAtTime(p.osc.frequency.value, now);
+      p.osc.frequency.linearRampToValueAtTime(driftFreqs[i], now + fade);
+    });
+    if (this.radio.gain) {
+      const gp = this.radio.gain.gain;
+      gp.cancelScheduledValues(now);
+      gp.setValueAtTime(gp.value, now);
+      gp.linearRampToValueAtTime(this.radioActive ? 0.15 : 0.0, now + fade);
+    }
+    // spectral shaper gentle retune
+    const shapeFreqs: number[] = []; const shapeQs: number[] = [];
+    this.spectralShaper.forEach(filt => {
+      const baseF = filt.frequency.value; const fTarget = Math.max(60, Math.min(12000, baseF * (0.9 + Math.random() * 0.2)));
+      const qTarget = 8 + Math.random() * 6; filt.frequency.cancelScheduledValues(now); filt.frequency.setValueAtTime(baseF, now);
+      filt.frequency.linearRampToValueAtTime(fTarget, now + fade); filt.Q.cancelScheduledValues(now); filt.Q.setValueAtTime(filt.Q.value, now);
+      filt.Q.linearRampToValueAtTime(qTarget, now + fade); shapeFreqs.push(fTarget); shapeQs.push(qTarget);
+    });
+    this.moment = { id: this.moment.id + 1, startAt: now, nextAt: now + nextIn, fadeDur: fade, targetGains, driftFreqs, shapeFreqs, shapeQs };
+  }
+
+  start() {
+    this.scheduleNewMoment();
+    this.momentTimer = window.setInterval(() => { const t = this.audioContext.currentTime; if (t >= this.moment.nextAt) this.scheduleNewMoment(); }, 1000);
+    this.diagTimer = window.setInterval(() => {
+      const gains = this.moment.targetGains; const freqs = this.moment.driftFreqs; const sum = gains.reduce((a,b)=>a+b,0)||1;
+      const centroid = gains.reduce((a,g,i)=>a+g*freqs[i],0)/sum; const active = gains.filter(g=>g>0.01).length;
+      const nextShift = Math.max(0, Math.ceil(this.moment.nextAt - this.audioContext.currentTime));
+      const fadePct = Math.max(0, Math.min(100, Math.round(((this.audioContext.currentTime - this.moment.startAt)/this.moment.fadeDur)*100)));
+      const shapeF = this.moment.shapeFreqs.reduce((a,b)=>a+b,0)/this.moment.shapeFreqs.length;
+      const shapeQ = this.moment.shapeQs.reduce((a,b)=>a+b,0)/this.moment.shapeQs.length;
+      this.onDiag?.({ active, centroid, nextShift, momentId: this.moment.id, fadePct, shapeF, shapeQ, spectralDensity: [] });
+    }, 1000);
+  }
+
+  setRadioActive(active: boolean) {
+    this.radioActive = active; const g = this.radio.gain; if (!g) return; const t = this.audioContext.currentTime;
+    const gp = g.gain;
+    gp.cancelScheduledValues(t);
+    gp.setValueAtTime(gp.value, t);
+    gp.linearRampToValueAtTime(active ? 0.15 : 0.0, t + 1);
+    try { if (active) this.radio.element?.play(); else this.radio.element?.pause(); } catch {}
+  }
+
+  dispose() {
+    if (this.momentTimer) window.clearInterval(this.momentTimer);
+    if (this.diagTimer) window.clearInterval(this.diagTimer);
+    this.partials.forEach(p => { try { p.osc.stop(); } catch {}; try { p.osc.disconnect(); p.gain.disconnect(); p.pan.disconnect(); } catch {} });
+    try { this.mainGain.disconnect(); } catch {}
+    try { this.radio.element?.pause(); } catch {}
+  }
+}
+

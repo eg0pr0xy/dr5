@@ -26,7 +26,7 @@ export class MemoryAudioEngine {
     this.audioContext = audioContext;
     this.config = {
       bufferSize: Math.floor(audioContext.sampleRate * 4),
-      grainDuration: 0.16,
+      grainDuration: 0.30,
       density: 0.5,
       ghostsActive: true,
       pipsActive: true,
@@ -70,17 +70,22 @@ export class MemoryAudioEngine {
     const tiltLow = this.audioContext.createBiquadFilter();
     tiltLow.type = 'lowshelf';
     tiltLow.frequency.setValueAtTime(500, this.audioContext.currentTime);
-    tiltLow.gain.setValueAtTime(0, this.audioContext.currentTime);
+    tiltLow.gain.setValueAtTime(3, this.audioContext.currentTime);
     
     const tiltHigh = this.audioContext.createBiquadFilter();
     tiltHigh.type = 'highshelf';
     tiltHigh.frequency.setValueAtTime(4000, this.audioContext.currentTime);
-    tiltHigh.gain.setValueAtTime(0, this.audioContext.currentTime);
+    tiltHigh.gain.setValueAtTime(-9, this.audioContext.currentTime);
     
     // Connect grain chain
     grainsGain.connect(tiltLow);
     tiltLow.connect(tiltHigh);
-    tiltHigh.connect(mainGain);
+    const grainsLpf = this.audioContext.createBiquadFilter();
+    grainsLpf.type = 'lowpass';
+    grainsLpf.frequency.setValueAtTime(900, this.audioContext.currentTime);
+    grainsLpf.Q.setValueAtTime(0.707, this.audioContext.currentTime);
+    tiltHigh.connect(grainsLpf);
+    grainsLpf.connect(mainGain);
     
     // Window curve for grains
     const windowSamples = Math.max(128, Math.floor(this.audioContext.sampleRate * this.config.grainDuration!));
@@ -243,10 +248,11 @@ export class MemoryAudioEngine {
       const dur = this.nodes.scheduler.grainDur;
       const bufLenSec = ringBuffer.length / sr;
       const filledSec = Math.min(this.nodes.capturedSamples, ringBuffer.length) / sr;
+      if (filledSec < 0.25) return; // wait until buffer has some content
       
       const biasRecent = 0.35;
       const isGhost = when < this.nodes.scheduler.ghostUntil;
-      const bias = isGhost ? 0.8 : biasRecent;
+      const bias = isGhost ? 0.7 : biasRecent;
       
       const recentSpan = Math.max(0.1, Math.min(filledSec, 1.2));
       const randBack = Math.random() * recentSpan;
@@ -273,9 +279,9 @@ export class MemoryAudioEngine {
     const tick = () => {
       const ctx = this.audioContext;
       const sched = this.nodes.scheduler;
-      
-      const baseRate = 4 + Math.min(0.5, Math.max(0, this.ambientRms)) * 40;
-      const userTarget = 4 + (sched.userDensity * 28);
+
+      const baseRate = 3 + Math.min(0.5, Math.max(0, this.ambientRms)) * 20;
+      const userTarget = 3 + (sched.userDensity * 16);
       const blended = baseRate * 0.6 + userTarget * 0.4;
       sched.targetRate = Math.min(32, blended + (ctx.currentTime < sched.ghostUntil ? 8 : 0));
       
