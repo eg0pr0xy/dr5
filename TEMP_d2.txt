@@ -185,8 +185,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
   }, []);
 
   return (
-    <div className={`h-full flex flex-col ${embedded ? 'p-2' : 'p-6'} overflow-hidden font-mono ${motionClass}`}>
-      {(!embedded) && (
+    <div className={`h-full flex flex-col p-6 overflow-hidden font-mono ${motionClass}`}>
       <header className="grid grid-cols-2 gap-4 shrink-0 mb-6 pb-4 border-b border-current border-opacity-10">
         <div className="space-y-1">
           <div className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
@@ -200,7 +199,6 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
           <div className="flex justify-between"><span>SQL_THR:</span> <span>{resonance.toFixed(1)}</span></div>
         </div>
       </header>
-      )}
 
       <div className="flex-1 w-full h-full flex flex-col justify-center items-center relative">
         <div className="grid grid-cols-7 gap-x-6 gap-y-1 relative z-10 p-4">
@@ -223,7 +221,6 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
         </div>
       </div>
 
-      {(!embedded) && (
       <footer className="mt-8 border-t border-current border-opacity-10 pt-6 flex justify-between items-center">
         <div className="flex gap-4">
           <span onClick={() => setDriftLevel(prev => (prev + 1) % 5)} className="text-[10px] cursor-pointer tabular-nums">[ DRIFT:{'|'.repeat(driftLevel)} ]</span>
@@ -231,9 +228,9 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
         </div>
         <div className="text-[9px] opacity-40 tracking-wider">{signalStrength}% SIGNAL</div>
       </footer>
-      )}
     </div>
   );
 };
 
 export default DroneMode;
+

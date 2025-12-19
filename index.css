@@ -20,3 +20,68 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: currentColor; }
 
+/* Responsive layout variables */
+:root {
+  --cols: 2;
+  --gap: 8px;
+  --rowH: 32px;
+  --pad: 12px;
+  --fontSize: clamp(12px, 1.6vw, 16px);
+  --lineHeight: clamp(14px, 1.8vw, 18px);
+}
+
+@media (max-width: 360px) {
+  :root { --cols: 1; --gap: 6px; --rowH: 28px; --pad: 8px; }
+}
+@media (min-width: 361px) and (max-width: 480px) {
+  :root { --cols: 1; --gap: 8px; --rowH: 30px; --pad: 10px; }
+}
+@media (min-width: 481px) and (max-width: 768px) {
+  :root { --cols: 2; --gap: 10px; --rowH: 32px; --pad: 12px; }
+}
+@media (min-width: 769px) {
+  :root { --cols: 3; --gap: 12px; --rowH: 34px; --pad: 14px; }
+}
+
+.app-root {
+  height: 100dvh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  font-size: var(--fontSize);
+  line-height: var(--lineHeight);
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.content-area {
+  min-height: 0; /* allow children to shrink */
+  overflow: hidden;
+}
+
+.content-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+
+.ascii-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  grid-auto-rows: minmax(var(--rowH), auto);
+  gap: var(--gap);
+  padding: var(--pad);
+}
+
+.ascii-block {
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.readout {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tabbar {
+  height: 44px;
+  min-height: 44px;
+}

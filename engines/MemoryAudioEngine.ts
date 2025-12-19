@@ -6,6 +6,7 @@ export class MemoryAudioEngine {
   private nodes: AudioEngineNodes;
   private ambientRms: number = 0;
   private currentStep: number = 0;
+  private currentF0: number = 110;
   
   // Event callbacks
   private onDiagnosticsUpdate?: (diagnostics: MemoryDiagnostics) => void;
@@ -70,14 +71,14 @@ export class MemoryAudioEngine {
     const tiltLow = this.audioContext.createBiquadFilter();
     tiltLow.type = 'lowshelf';
     tiltLow.frequency.setValueAtTime(500, this.audioContext.currentTime);
-    tiltLow.gain.setValueAtTime(3, this.audioContext.currentTime);
+    tiltLow.gain.setValueAtTime(4, this.audioContext.currentTime);
     
     const tiltHigh = this.audioContext.createBiquadFilter();
     tiltHigh.type = 'highshelf';
     tiltHigh.frequency.setValueAtTime(4000, this.audioContext.currentTime);
-    tiltHigh.gain.setValueAtTime(-9, this.audioContext.currentTime);
+    tiltHigh.gain.setValueAtTime(-12, this.audioContext.currentTime);
     
-    // Connect grain chain
+    // Connect grain chain with harmonic resonators (wet/dry)
     grainsGain.connect(tiltLow);
     tiltLow.connect(tiltHigh);
     const grainsLpf = this.audioContext.createBiquadFilter();
@@ -85,7 +86,17 @@ export class MemoryAudioEngine {
     grainsLpf.frequency.setValueAtTime(900, this.audioContext.currentTime);
     grainsLpf.Q.setValueAtTime(0.707, this.audioContext.currentTime);
     tiltHigh.connect(grainsLpf);
-    grainsLpf.connect(mainGain);
+    const resWet = this.audioContext.createGain(); resWet.gain.setValueAtTime(0.7, this.audioContext.currentTime);
+    const resDry = this.audioContext.createGain(); resDry.gain.setValueAtTime(0.2, this.audioContext.currentTime);
+    grainsLpf.connect(resDry); resDry.connect(mainGain);
+    const baseF0 = 110; const harmonics = [1,2,3,4,5,6];
+    const resonators = harmonics.map(h => {
+      const f = this.audioContext.createBiquadFilter(); f.type = 'bandpass';
+      f.Q.setValueAtTime(28, this.audioContext.currentTime);
+      f.frequency.setValueAtTime(baseF0 * h, this.audioContext.currentTime);
+      grainsLpf.connect(f); f.connect(resWet); return f;
+    });
+    resWet.connect(mainGain);
     
     // Window curve for grains
     const windowSamples = Math.max(128, Math.floor(this.audioContext.sampleRate * this.config.grainDuration!));
@@ -122,7 +133,11 @@ export class MemoryAudioEngine {
       windowCurve,
       tiltLow,
       tiltHigh,
-      scheduler
+      scheduler,
+      grainsLpf,
+      resonators,
+      resWet,
+      resDry
     };
   }
   
@@ -169,6 +184,7 @@ export class MemoryAudioEngine {
     try {
       await this.startMicrophone();
       this.startGrainScheduler();
+      this.startResonatorCycle();
       this.startGhostScheduler();
       this.startDiagnosticsUpdater();
       this.startParameterSequencer();
@@ -294,6 +310,24 @@ export class MemoryAudioEngine {
     
     this.intervalId = window.setInterval(tick, this.nodes.scheduler.intervalMs);
   }
+
+  private startResonatorCycle(): void {
+    if (!this.nodes.resonators) return;
+    let idx = 0;
+    const fundamentals = [98, 110, 123, 131, 147, 165];
+    const cycle = () => {
+      const f0 = fundamentals[idx % fundamentals.length];
+      this.currentF0 = f0;
+      const now = this.audioContext.currentTime;
+      this.nodes.resonators!.forEach((bp, i) => {
+        const target = f0 * (i + 1);
+        bp.frequency.setTargetAtTime(target, now, 0.5);
+      });
+      idx++;
+      this.stepTimeoutId = window.setTimeout(cycle, 4000) as unknown as number;
+    };
+    cycle();
+  }
   
   private startGhostScheduler(): void {
     if (!this.config.ghostsActive) return;
@@ -338,7 +372,8 @@ export class MemoryAudioEngine {
         lastGhost: '--:--:--',
         currentStep: this.currentStep,
         cutoff: this.FREQ_STEPS[this.currentStep],
-        q: this.Q_STEPS[this.currentStep]
+        q: this.Q_STEPS[this.currentStep],
+        f0: this.currentF0
       };
       
       this.onDiagnosticsUpdate?.(diagnostics);
@@ -422,7 +457,8 @@ export class MemoryAudioEngine {
       lastGhost: '--:--:--',
       currentStep: this.currentStep,
       cutoff: this.FREQ_STEPS[this.currentStep],
-      q: this.Q_STEPS[this.currentStep]
+      q: this.Q_STEPS[this.currentStep],
+      f0: this.currentF0
     };
   }
   

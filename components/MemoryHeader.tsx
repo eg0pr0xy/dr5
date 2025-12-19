@@ -25,7 +25,7 @@ const MemoryHeader: React.FC<MemoryHeaderProps> = ({ diagnostics, isAnimated, fr
       </header>
       
       <div className={`text-[9px] opacity-60 uppercase tracking-[0.2em] mb-2 tabular-nums ${motionClass}`}>
-        MEM_DIAG: [ BUF:{diagnostics.bufFill}% ] [ GRAIN:{diagnostics.grainRate}HZ ] [ RMS:{diagnostics.rms} ] [ LAST_GHOST:{diagnostics.lastGhost} ]
+        MEM_DIAG: [ BUF:{diagnostics.bufFill}% ] [ GRAIN:{diagnostics.grainRate}HZ ] [ RMS:{diagnostics.rms} ] [ F0:{diagnostics.f0 || 0}HZ ] [ LINES:{fragments?.length || 0} ] [ LAST_GHOST:{diagnostics.lastGhost} ]
       </div>
     </>
   );

@@ -24,6 +24,10 @@ export interface AudioEngineNodes {
   windowCurve: Float32Array;
   tiltLow: BiquadFilterNode;
   tiltHigh: BiquadFilterNode;
+  grainsLpf?: BiquadFilterNode;
+  resonators?: BiquadFilterNode[];
+  resWet?: GainNode;
+  resDry?: GainNode;
   scheduler: GrainScheduler;
 }
 
@@ -46,6 +50,7 @@ export interface MemoryDiagnostics {
   currentStep: number;
   cutoff: number;
   q: number;
+  f0?: number;
 }
 
 export interface KHSState {
@@ -59,10 +64,7 @@ export interface KHSState {
   spectralDensity: number[];
 }
 
-export interface MemoryModeProps {
-  audioContext: AudioContext;
-  isAnimated?: boolean;
-}
+export interface MemoryModeProps {\n  audioContext: AudioContext;\n  isAnimated?: boolean;\n  embedded?: boolean;\n}
 
 export interface MemoryFragment {
   x: number;
@@ -76,6 +78,7 @@ export interface MemoryFragment {
 export interface KHSModeProps {
   audioContext: AudioContext;
   isAnimated?: boolean;
+  embedded?: boolean;
 }
 
 export interface TouchFieldState {
