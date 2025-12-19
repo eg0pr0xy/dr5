@@ -1,0 +1,7 @@
+{
+  "name": "INSTRUMENT-DR5",
+  "description": "A retro-futuristic computational instrument interface featuring ASCII-based visualization, signal processing, and generative cellular automata.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}

@@ -1,0 +1,222 @@
+
+import React, { useState, useEffect, useRef } from 'react';
+
+interface DroneModeProps {
+  audioContext: AudioContext;
+  isAnimated?: boolean;
+}
+
+const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated }) => {
+  const [visData, setVisData] = useState<number[]>(new Array(6).fill(0));
+  const [noiseVisData, setNoiseVisData] = useState(0);
+  const [cutoff, setCutoff] = useState(400);
+  const [resonance, setResonance] = useState(4.0);
+  const [signalStrength, setSignalStrength] = useState(0);
+  const [driftLevel, setDriftLevel] = useState(1); 
+  const [lastStepType, setLastStepType] = useState<string>("IDLE");
+  const [flickerFrame, setFlickerFrame] = useState(0);
+
+  const [fmActive, setFmActive] = useState(false);
+  const [subActive, setSubActive] = useState(true);
+
+  const engineRef = useRef<{
+    oscillators: OscillatorNode[];
+    gains: GainNode[];
+    filter: BiquadFilterNode;
+    noise: AudioBufferSourceNode;
+    analysers: AnalyserNode[];
+    noiseAnalyser: AnalyserNode;
+    pitchLfos: OscillatorNode[];
+    subOsc: OscillatorNode | null;
+    subGain: GainNode | null;
+  } | null>(null);
+
+  const lastStepTimeRef = useRef<number>(0);
+  const stepDurationRef = useRef<number>(1.0);
+
+  const CHAR_SETS = [
+    ["·", "░", "▒", "▓", "█"],
+    ["·", "o", "0", "O", "@"],
+    ["·", "-", "=", "+", "#"],
+    ["·", "i", "l", "I", "H"],
+    ["·", ".", ":", ";", "!"],
+    ["·", "'", "^", "*", "†"],
+    ["·", "░", "▒", "▓", "█"]
+  ];
+
+  useEffect(() => {
+    const mainGain = audioContext.createGain();
+    mainGain.gain.setValueAtTime(0.4, audioContext.currentTime);
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(400, audioContext.currentTime);
+    filter.Q.setValueAtTime(4, audioContext.currentTime);
+    const baseFreqs = [55, 110, 82.5, 165, 110.5, 164.8];
+    const oscillators: OscillatorNode[] = [];
+    const gains: GainNode[] = [];
+    const analysers: AnalyserNode[] = [];
+    const pitchLfos: OscillatorNode[] = [];
+
+    const subOsc = audioContext.createOscillator();
+    const subGain = audioContext.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(27.5, audioContext.currentTime);
+    subGain.gain.setValueAtTime(subActive ? 0.3 : 0, audioContext.currentTime);
+    subOsc.connect(subGain);
+    subGain.connect(filter);
+    subOsc.start();
+
+    baseFreqs.forEach((freq, i) => {
+      const osc = audioContext.createOscillator();
+      const oscGain = audioContext.createGain();
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256;
+      osc.type = i % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, audioContext.currentTime);
+      const pitchLfo = audioContext.createOscillator();
+      const pitchLfoGain = audioContext.createGain();
+      pitchLfo.frequency.setValueAtTime(0.01 + Math.random() * 0.05, audioContext.currentTime);
+      pitchLfoGain.gain.setValueAtTime(2.5, audioContext.currentTime);
+      pitchLfo.connect(pitchLfoGain);
+      pitchLfoGain.connect(osc.frequency);
+      pitchLfo.start();
+      pitchLfos.push(pitchLfo);
+      oscGain.gain.setValueAtTime(0.15, audioContext.currentTime);
+      osc.connect(oscGain);
+      oscGain.connect(analyser);
+      analyser.connect(filter);
+      osc.start();
+      oscillators.push(osc);
+      gains.push(oscGain);
+      analysers.push(analyser);
+    });
+
+    const bufferSize = audioContext.sampleRate * 2;
+    const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const data = buffer.getChannelData(0);
+    let lastOut = 0;
+    for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        data[i] = (lastOut + (0.02 * white)) / 1.02;
+        lastOut = data[i];
+        data[i] *= 3.5;
+    }
+    const noiseSource = audioContext.createBufferSource();
+    noiseSource.buffer = buffer;
+    noiseSource.loop = true;
+    const noiseGain = audioContext.createGain();
+    noiseGain.gain.setValueAtTime(0.06, audioContext.currentTime);
+    const noiseAnalyser = audioContext.createAnalyser();
+    noiseAnalyser.fftSize = 256;
+    noiseSource.connect(noiseGain);
+    noiseGain.connect(noiseAnalyser);
+    noiseAnalyser.connect(filter);
+    noiseSource.start();
+    filter.connect(mainGain);
+    mainGain.connect(audioContext.destination);
+    engineRef.current = { oscillators, gains, filter, noise: noiseSource, analysers, noiseAnalyser, pitchLfos, subOsc, subGain };
+
+    const updateInterval = setInterval(() => {
+      if (!engineRef.current) return;
+      const time = audioContext.currentTime;
+      setFlickerFrame(prev => (prev + 1) % 120);
+      if (time - lastStepTimeRef.current > stepDurationRef.current) {
+        lastStepTimeRef.current = time;
+        stepDurationRef.current = 0.5 + Math.random() * 3.0;
+        const chance = Math.random();
+        if (chance > 0.5) {
+          const targetCutoff = 100 + (Math.random() * 3 * 350);
+          engineRef.current.filter.frequency.setTargetAtTime(targetCutoff, time, 0.05);
+          setCutoff(Math.floor(targetCutoff));
+          setLastStepType("FRQ_STEP");
+        } else {
+          const targetQ = [1, 4, 12, 25, 40][Math.floor(Math.random() * 5)];
+          engineRef.current.filter.Q.setTargetAtTime(targetQ, time, 0.08);
+          setResonance(targetQ);
+          setLastStepType("RES_STEP");
+        }
+      }
+      const getAmplitude = (analyser: AnalyserNode) => {
+        const dataArray = new Uint8Array(analyser.fftSize);
+        analyser.getByteTimeDomainData(dataArray);
+        let maxVal = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          const val = Math.abs(dataArray[i] - 128);
+          if (val > maxVal) maxVal = val;
+        }
+        return Math.floor((maxVal / 128) * 100);
+      };
+      const newData = engineRef.current.analysers.map(ana => getAmplitude(ana));
+      setVisData(newData);
+      setNoiseVisData(getAmplitude(engineRef.current.noiseAnalyser));
+      setSignalStrength(Math.floor((newData.reduce((a, b) => a + b, 0) / 600) * 100 + (Math.random() * 5)));
+    }, 50);
+
+    return () => {
+      clearInterval(updateInterval);
+      if (engineRef.current) {
+        engineRef.current.oscillators.forEach(o => o.stop());
+        engineRef.current.noise.stop();
+        engineRef.current.pitchLfos.forEach(l => l.stop());
+        engineRef.current.subOsc?.stop();
+      }
+      mainGain.disconnect();
+    };
+  }, [audioContext, fmActive]);
+
+  useEffect(() => {
+    if (!engineRef.current) return;
+    const time = audioContext.currentTime;
+    engineRef.current.oscillators.forEach((osc, i) => {
+      osc.frequency.setTargetAtTime(55 * [1, 2, 1.5, 3, 2.01, 2.99][i] + ([0, 0.4, -0.6, 0.5, 0.8, -0.3][i] * driftLevel * 0.5), time, 0.5);
+    });
+  }, [driftLevel, audioContext]);
+
+  const allSignals = [...visData, noiseVisData];
+  const motionClass = isAnimated ? 'animate-ui-motion' : '';
+
+  return (
+    <div className={`h-full flex flex-col p-6 overflow-hidden font-mono ${motionClass}`}>
+      <header className="grid grid-cols-2 gap-4 shrink-0 mb-6 pb-4 border-b border-current border-opacity-10">
+        <div className="space-y-1">
+          <div className="text-[10px] font-bold uppercase tracking-widest flex items-center gap-2">
+            <span className={`w-2 h-2 bg-current ${driftLevel === 0 ? 'opacity-40' : 'animate-pulse'}`}></span>
+            {driftLevel === 0 ? 'PHASE_SYNC' : 'DRIFT_MOD'}
+          </div>
+          <div className="text-[8px] opacity-40 uppercase tracking-[0.2em]">MOD: {lastStepType}</div>
+        </div>
+        <div className="text-[9px] opacity-60 tabular-nums text-right border-l border-current border-opacity-10 pl-4">
+          <div className="flex justify-between"><span>VCO_FRQ:</span> <span>{cutoff}HZ</span></div>
+          <div className="flex justify-between"><span>SQL_THR:</span> <span>{resonance.toFixed(1)}</span></div>
+        </div>
+      </header>
+
+      <div className="flex-1 flex flex-col justify-center items-center relative">
+        <div className="grid grid-cols-7 gap-x-6 gap-y-1 relative z-10 p-4">
+          {['L0', 'L1', 'L2', 'L3', 'L4', 'L5', 'N'].map((label, i) => (
+            <div key={i} className={`text-[7px] opacity-30 text-center mb-3 font-bold border-b border-current ${motionClass}`}>{label}</div>
+          ))}
+          {Array.from({ length: 12 }).map((_, rowIndex) => {
+            const invertedRowIndex = 11 - rowIndex;
+            const threshold = (invertedRowIndex / 11) * 100;
+            return allSignals.map((signalValue, colIndex) => {
+              const isActive = signalValue >= threshold;
+              const char = isActive ? CHAR_SETS[colIndex][Math.min(CHAR_SETS[colIndex].length-1, Math.floor((signalValue-threshold)/20))] : '·';
+              return <div key={`${rowIndex}-${colIndex}`} className={`text-center text-xs w-4 h-4 flex items-center justify-center transition-all ${isActive ? 'opacity-100 font-bold' : 'opacity-[0.1]'} ${motionClass}`}>{char}</div>;
+            });
+          })}
+        </div>
+      </div>
+
+      <footer className="mt-8 border-t border-current border-opacity-10 pt-6 flex justify-between items-center">
+        <div className="flex gap-4">
+          <span onClick={() => setDriftLevel(prev => (prev + 1) % 5)} className="text-[10px] cursor-pointer tabular-nums">[ DRIFT:{'|'.repeat(driftLevel)} ]</span>
+          <span onClick={() => setFmActive(!fmActive)} className={`text-[10px] cursor-pointer ${fmActive ? 'underline' : 'opacity-40'}`}>[ FM ]</span>
+        </div>
+        <div className="text-[9px] opacity-40 tracking-wider">{signalStrength}% SIGNAL</div>
+      </footer>
+    </div>
+  );
+};
+
+export default DroneMode;
