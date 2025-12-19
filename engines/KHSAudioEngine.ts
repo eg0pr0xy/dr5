@@ -76,6 +76,11 @@ export class KHSAudioEngine {
       radioAnalyser.connect(radioFilter);
       radioFilter.connect(radioGain);
       radioGain.connect(this.bus);
+      // Gracefully handle load/playback errors by ramping radio bed to 0
+      el.addEventListener('error', () => {
+        const t = ctx.currentTime; const gp = radioGain.gain;
+        gp.cancelScheduledValues(t); gp.setValueAtTime(gp.value, t); gp.linearRampToValueAtTime(0.0, t + 0.5);
+      });
       this.radio = { element: el, gain: radioGain, filter: radioFilter, analyser: radioAnalyser };
     } catch { this.radio = { element: null, gain: radioGain, filter: radioFilter, analyser: radioAnalyser }; }
   }
@@ -137,7 +142,21 @@ export class KHSAudioEngine {
     gp.cancelScheduledValues(t);
     gp.setValueAtTime(gp.value, t);
     gp.linearRampToValueAtTime(active ? 0.1 : 0.0, t + 1);
-    try { if (active) this.radio.element?.play(); else this.radio.element?.pause(); } catch {}
+    try {
+      if (active) {
+        const p: any = this.radio.element?.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => {
+            // Playback failed (unsupported source or blocked). Ramp down and mark inactive.
+            this.radioActive = false;
+            const tt = this.audioContext.currentTime; const param = g.gain;
+            param.cancelScheduledValues(tt); param.setValueAtTime(param.value, tt); param.linearRampToValueAtTime(0.0, tt + 0.5);
+          });
+        }
+      } else {
+        this.radio.element?.pause();
+      }
+    } catch {}
   }
 
   dispose() {

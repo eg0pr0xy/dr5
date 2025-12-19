@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { MemoryFragment, TouchFieldState } from '../types/audio';
 
 interface MemoryVisualizationProps {
@@ -11,9 +11,18 @@ const MemoryVisualization: React.FC<MemoryVisualizationProps> = ({
   fragments, touchField, isAnimated 
 }) => {
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
-  
+  const [scan, setScan] = useState(0);
+  useEffect(() => {
+    const id = window.setInterval(() => setScan(v => (v + 3) % 100), 80);
+    return () => window.clearInterval(id);
+  }, []);
+      {/* Scan line animation */}
+      <div className="absolute left-0 right-0" style={{ top: `${scan}%`, opacity: 0.15 }}>
+        <div className="w-full h-[1px] bg-current"></div>
+      </div>
+
   return (
-    <div className="flex-1 relative border border-current border-opacity-5 bg-black/5 overflow-hidden">
+    <div className="flex-1 w-full h-full relative border border-current border-opacity-5 bg-black/5 overflow-hidden">
       {fragments.map((f, i) => (
         <div key={i} className={`absolute transition-all whitespace-nowrap ${motionClass}`} 
              style={{ left: `${f.x}%`, top: `${f.y}%`, opacity: f.opacity, fontSize: '10px' }}>
