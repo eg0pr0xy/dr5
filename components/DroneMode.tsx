@@ -45,6 +45,9 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated }) => {
   ];
 
   useEffect(() => {
+    if (audioContext.state === 'suspended') {
+      try { audioContext.resume(); } catch {}
+    }
     const mainGain = audioContext.createGain();
     mainGain.gain.setValueAtTime(0.4, audioContext.currentTime);
     const filter = audioContext.createBiquadFilter();

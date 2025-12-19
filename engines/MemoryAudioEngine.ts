@@ -176,28 +176,62 @@ export class MemoryAudioEngine {
   private async startMicrophone(): Promise<void> {
     const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
     this.nodes.micStream = micStream;
-    
+
     const source = this.audioContext.createMediaStreamSource(micStream);
+
+    // Prefer AudioWorklet for low-latency capture
+    const base = (import.meta as any).env?.BASE_URL || '/';
+    try {
+      // Register worklet and create node
+      await this.audioContext.audioWorklet.addModule(`${base}worklets/memory-capture-processor.js`);
+      const worklet = new (window as any).AudioWorkletNode(this.audioContext, 'memory-capture-processor', {
+        numberOfInputs: 1,
+        numberOfOutputs: 0,
+        outputChannelCount: [0],
+        channelCount: 1,
+      });
+      worklet.port.onmessage = (e: MessageEvent) => {
+        const msg: any = e.data;
+        if (!msg || msg.t !== 'chunk') return;
+        const input: Float32Array = msg.data;
+        const bufferSize = this.config.bufferSize!;
+        // write to ring
+        for (let i = 0; i < input.length; i++) {
+          this.nodes.ringData[this.nodes.bufferPtr] = input[i];
+          this.nodes.bufferPtr = (this.nodes.bufferPtr + 1) % bufferSize;
+          if (this.nodes.capturedSamples < bufferSize) this.nodes.capturedSamples++;
+        }
+        // update RMS from processor
+        if (typeof msg.rms === 'number') this.ambientRms = msg.rms;
+      };
+      source.connect(worklet);
+      this.nodes.workletNode = worklet;
+      this.nodes.processor = null;
+      return;
+    } catch {}
+
+    // Fallback: ScriptProcessor (legacy)
     const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    
     processor.onaudioprocess = (e) => {
       const input = e.inputBuffer.getChannelData(0);
       const bufferSize = this.config.bufferSize!;
-      
+
       for (let i = 0; i < input.length; i++) {
         this.nodes.ringData[this.nodes.bufferPtr] = input[i];
         this.nodes.bufferPtr = (this.nodes.bufferPtr + 1) % bufferSize;
         if (this.nodes.capturedSamples < bufferSize) this.nodes.capturedSamples++;
       }
-      
-      // Calculate RMS
+
       let sum = 0;
       for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
       this.ambientRms = Math.sqrt(sum / input.length);
     };
-    
     source.connect(processor);
-    processor.connect(this.audioContext.destination);
+    // do NOT route processor to destination to avoid echo; connect to a dummy gain if needed
+    const nullGain = this.audioContext.createGain();
+    nullGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+    processor.connect(nullGain);
+    nullGain.connect(this.audioContext.destination);
     this.nodes.processor = processor;
   }
   
@@ -406,10 +440,9 @@ export class MemoryAudioEngine {
       this.nodes.micStream.getTracks().forEach(t => t.stop());
     }
     
-    // Disconnect processor
-    if (this.nodes.processor) {
-      this.nodes.processor.disconnect();
-    }
+    // Disconnect capture nodes
+    try { this.nodes.processor?.disconnect(); } catch {}
+    try { this.nodes.workletNode?.disconnect(); } catch {}
     
     // Disconnect main gain
     this.nodes.mainGain.disconnect();

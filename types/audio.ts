@@ -7,6 +7,26 @@ export interface MemoryEngineConfig {
   droneActive?: boolean;
 }
 
+export interface AudioEngineNodes {
+  micStream: MediaStream | null;
+  processor: ScriptProcessorNode | null;
+  workletNode?: AudioWorkletNode | null;
+  ringBuffer: AudioBuffer;
+  ringData: Float32Array;
+  bufferPtr: number;
+  capturedSamples: number;
+  mainGain: GainNode;
+  droneFilter: BiquadFilterNode;
+  droneGain: GainNode;
+  staticGain: GainNode;
+  dustGain: GainNode;
+  grainsGain: GainNode;
+  windowCurve: Float32Array;
+  tiltLow: BiquadFilterNode;
+  tiltHigh: BiquadFilterNode;
+  scheduler: GrainScheduler;
+}
+
 export interface GrainScheduler {
   timer: number | null;
   lookahead: number;
@@ -28,30 +48,20 @@ export interface MemoryDiagnostics {
   q: number;
 }
 
-export interface TouchFieldState {
-  isActive: boolean;
-  tilt: number;
-  density: number;
-  grainWidth: number;
+export interface KHSState {
+  active: number;
+  centroid: number;
+  nextShift: number;
+  momentId: number;
+  fadePct: number;
+  shapeF: number;
+  shapeQ: number;
+  spectralDensity: number[];
 }
 
-export interface AudioEngineNodes {
-  micStream: MediaStream | null;
-  processor: ScriptProcessorNode | null;
-  ringBuffer: AudioBuffer;
-  ringData: Float32Array;
-  bufferPtr: number;
-  capturedSamples: number;
-  mainGain: GainNode;
-  droneFilter: BiquadFilterNode;
-  droneGain: GainNode;
-  staticGain: GainNode;
-  dustGain: GainNode;
-  grainsGain: GainNode;
-  windowCurve: Float32Array;
-  tiltLow: BiquadFilterNode;
-  tiltHigh: BiquadFilterNode;
-  scheduler: GrainScheduler;
+export interface MemoryModeProps {
+  audioContext: AudioContext;
+  isAnimated?: boolean;
 }
 
 export interface MemoryFragment {
@@ -63,7 +73,14 @@ export interface MemoryFragment {
   isVibrating: boolean;
 }
 
-export interface MemoryModeProps {
+export interface KHSModeProps {
   audioContext: AudioContext;
   isAnimated?: boolean;
+}
+
+export interface TouchFieldState {
+  isActive: boolean;
+  tilt: number;      // -1..1
+  density: number;   // 0..1
+  grainWidth: number; // ms
 }

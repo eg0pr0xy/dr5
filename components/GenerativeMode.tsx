@@ -23,6 +23,9 @@ const GenerativeMode: React.FC<GenerativeModeProps> = ({ audioContext, isAnimate
   } | null>(null);
 
   useEffect(() => {
+    if (audioContext.state === 'suspended') {
+      try { audioContext.resume(); } catch {}
+    }
     const mainGain = audioContext.createGain(); mainGain.gain.setValueAtTime(0.3, audioContext.currentTime);
     const filter = audioContext.createBiquadFilter(); filter.type = 'lowpass'; filter.frequency.setValueAtTime(1200, audioContext.currentTime);
     const feedbackGain = audioContext.createGain(); feedbackGain.gain.setValueAtTime(0, audioContext.currentTime);
