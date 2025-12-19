@@ -3,6 +3,9 @@ import { KHSState } from '../types/audio';
 export class KHSAudioEngine {
   private audioContext: AudioContext;
   private mainGain: GainNode;
+  private bus: GainNode;
+  private lpf: BiquadFilterNode;
+  private hpf: BiquadFilterNode;
   private spectralShaper: BiquadFilterNode[] = [];
   private partials: { osc: OscillatorNode; gain: GainNode; pan: StereoPannerNode; baseFreq: number }[] = [];
   private radio = { element: null as HTMLAudioElement | null, gain: null as GainNode | null, filter: null as BiquadFilterNode | null, analyser: null as AnalyserNode | null };
@@ -17,6 +20,20 @@ export class KHSAudioEngine {
     this.audioContext = audioContext;
     this.mainGain = audioContext.createGain();
     this.mainGain.gain.setValueAtTime(0.5, audioContext.currentTime);
+    // Master bus: gentle HPF/LPF to keep ambient drone, remove harsh highs
+    this.bus = audioContext.createGain();
+    this.bus.gain.setValueAtTime(1.0, audioContext.currentTime);
+    this.lpf = audioContext.createBiquadFilter();
+    this.lpf.type = 'lowpass';
+    this.lpf.frequency.setValueAtTime(1400, audioContext.currentTime);
+    this.lpf.Q.setValueAtTime(0.707, audioContext.currentTime);
+    this.hpf = audioContext.createBiquadFilter();
+    this.hpf.type = 'highpass';
+    this.hpf.frequency.setValueAtTime(35, audioContext.currentTime);
+    // chain: all voices -> bus -> lpf -> hpf -> mainGain -> destination
+    this.bus.connect(this.lpf);
+    this.lpf.connect(this.hpf);
+    this.hpf.connect(this.mainGain);
     this.mainGain.connect(audioContext.destination);
     this.buildGraph();
   }
@@ -25,15 +42,19 @@ export class KHSAudioEngine {
 
   private buildGraph() {
     const ctx = this.audioContext;
-    const roomModes = [110, 240, 800, 1400, 2800];
+    const roomModes = [110, 220, 480, 900, 1400];
     this.spectralShaper = roomModes.map(freq => {
-      const f = ctx.createBiquadFilter(); f.type = 'bandpass';
-      f.frequency.setValueAtTime(freq, ctx.currentTime); f.Q.setValueAtTime(10, ctx.currentTime); f.connect(this.mainGain); return f;
+      const f = ctx.createBiquadFilter();
+      f.type = 'bandpass';
+      f.frequency.setValueAtTime(freq, ctx.currentTime);
+      f.Q.setValueAtTime(3, ctx.currentTime);
+      f.connect(this.bus);
+      return f;
     });
     const RATIOS = [1, 1.0679, 1.125, 1.1892, 1.25, 1.3333, 1.4142, 1.4983, 1.618, 1.7818, 1.88, 2.0, 2.13, 2.25];
     this.partials = RATIOS.map((ratio) => {
       const osc = ctx.createOscillator(); const gain = ctx.createGain(); const pan = ctx.createStereoPanner();
-      const base = 43.2 * ratio; osc.type = 'sine'; osc.frequency.setValueAtTime(base, ctx.currentTime); gain.gain.setValueAtTime(0.008, ctx.currentTime);
+      const base = 43.2 * ratio; osc.type = 'sine'; osc.frequency.setValueAtTime(base, ctx.currentTime); gain.gain.setValueAtTime(0.004, ctx.currentTime);
       osc.connect(gain); gain.connect(pan); this.spectralShaper.forEach(f => pan.connect(f)); osc.start(); return { osc, gain, pan, baseFreq: base };
     });
     // Radio chain
@@ -43,7 +64,10 @@ export class KHSAudioEngine {
     try {
       const el = new Audio('https://dradio-edge-209a-fra-lg-cdn.cast.addradio.de/dradio/dlf/live/mp3/128/stream.mp3');
       el.crossOrigin = 'anonymous'; el.loop = true; const src = ctx.createMediaElementSource(el);
-      src.connect(radioAnalyser); radioAnalyser.connect(radioFilter); radioFilter.connect(radioGain); this.spectralShaper.forEach(f => radioGain.connect(f));
+      src.connect(radioAnalyser);
+      radioAnalyser.connect(radioFilter);
+      radioFilter.connect(radioGain);
+      radioGain.connect(this.bus);
       this.radio = { element: el, gain: radioGain, filter: radioFilter, analyser: radioAnalyser };
     } catch { this.radio = { element: null, gain: radioGain, filter: radioFilter, analyser: radioAnalyser }; }
   }
