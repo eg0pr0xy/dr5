@@ -57,6 +57,15 @@ const App: React.FC = () => {
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastInteractRef = useRef<number>(Date.now());
+  // Audio diagnostics
+  const [audioState, setAudioState] = useState<string>('suspended');
+  const [resumeCount, setResumeCount] = useState(0);
+  const [resumeFailCount, setResumeFailCount] = useState(0);
+  const [lastResumeReason, setLastResumeReason] = useState<string>('NONE');
+  const [lastResumeAt, setLastResumeAt] = useState<number | null>(null);
+  const [pageVisibility, setPageVisibility] = useState<'visible' | 'hidden'>(
+    (typeof document !== 'undefined' ? (document.visibilityState as any) : 'visible')
+  );
 
   const getContrastOpacity = () => {
     switch(contrast) {
@@ -82,7 +91,21 @@ const App: React.FC = () => {
   const generateRandomTheme = () => {
     const r = () => Math.floor(Math.random() * 256).toString(16).padStart(2, '0');
     const bg = `#${r()}${r()}${r()}`;
-    const text = `#${r()}${r()}${r()}`;
+    const getContrastingText = (hex: string) => {
+      const h = hex.replace('#', '');
+      const r = parseInt(h.slice(0, 2), 16) / 255;
+      const g = parseInt(h.slice(2, 4), 16) / 255;
+      const b = parseInt(h.slice(4, 6), 16) / 255;
+      // sRGB to linear
+      const srgbToLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+      const rl = srgbToLinear(r);
+      const gl = srgbToLinear(g);
+      const bl = srgbToLinear(b);
+      const luminance = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+      // Choose high-contrast text color (light parchment for dark bg, near-black for light bg)
+      return luminance < 0.5 ? '#E5D9C4' : '#1A1A1A';
+    };
+    const text = getContrastingText(bg);
     setCustomColors({ bg, text });
     setTheme(Theme.CUSTOM);
   };
@@ -92,18 +115,51 @@ const App: React.FC = () => {
     setIsInverted(false);
   };
 
+  const ensureResumed = async (reason: string) => {
+    const ctx = audioContextRef.current;
+    if (!ctx) return;
+    setLastResumeReason(reason);
+    try {
+      if ((ctx as any).state !== 'running') {
+        await ctx.resume();
+        setResumeCount(c => c + 1);
+        setLastResumeAt(Date.now());
+      }
+      setAudioState((ctx as any).state || 'unknown');
+    } catch (e) {
+      setResumeFailCount(c => c + 1);
+    }
+  };
+
   const initializeAudio = () => {
     if (!audioContextRef.current) {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Track state changes
+      audioContextRef.current.onstatechange = () => {
+        setAudioState((audioContextRef.current as any)?.state || 'unknown');
+      };
     }
-    if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
-    }
+    // Attempt to resume on user gesture
+    ensureResumed('ENTER_THE_ROOM');
+    // Silent unlock pulse (iOS safety)
+    try {
+      const ctx = audioContextRef.current!;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, ctx.currentTime);
+      g.connect(ctx.destination);
+      const o = ctx.createOscillator();
+      o.frequency.setValueAtTime(1, ctx.currentTime);
+      o.connect(g);
+      o.start();
+      o.stop(ctx.currentTime + 0.05);
+    } catch {}
     setIsBooting(true);
   };
 
   const handleModeChange = (newMode: Mode) => {
     if (!isAudioStarted || isFlipping || mode === newMode) return;
+    // Ensure audio is resumed when switching modes (mobile safety)
+    ensureResumed('mode_switch');
     setMode(newMode);
     setIsFlipping(true);
     setTimeout(() => setDisplayMode(newMode), 200);
@@ -155,6 +211,52 @@ const App: React.FC = () => {
       return () => clearInterval(logInterval);
     }
   }, [isBooting]);
+
+  // Install robust resume hooks once audio is started
+  useEffect(() => {
+    if (!isAudioStarted) return;
+    const ctx = audioContextRef.current;
+    if (ctx) setAudioState((ctx as any).state || 'unknown');
+
+    const onVisibility = () => {
+      const vs = document.visibilityState as 'visible' | 'hidden';
+      setPageVisibility(vs);
+      if (vs === 'visible') ensureResumed('visibilitychange');
+    };
+    const onPageShow = () => ensureResumed('pageshow');
+    const onFocus = () => ensureResumed('focus');
+    const onTouchEnd = () => ensureResumed('touchend');
+    const onPointerDown = () => ensureResumed('pointerdown');
+    const onClick = () => ensureResumed('click');
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pageshow', onPageShow);
+    window.addEventListener('focus', onFocus);
+    window.addEventListener('touchend', onTouchEnd, { passive: true } as any);
+    window.addEventListener('pointerdown', onPointerDown, { passive: true } as any);
+    window.addEventListener('click', onClick, { passive: true } as any);
+
+    const poll = setInterval(() => {
+      if (audioContextRef.current) setAudioState((audioContextRef.current as any).state || 'unknown');
+    }, 1000);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pageshow', onPageShow);
+      window.removeEventListener('focus', onFocus);
+      window.removeEventListener('touchend', onTouchEnd as any);
+      window.removeEventListener('pointerdown', onPointerDown as any);
+      window.removeEventListener('click', onClick as any);
+      clearInterval(poll);
+    };
+  }, [isAudioStarted]);
+
+  const formatTimeHMS = (t: number | null) => {
+    if (!t) return '--:--:--';
+    const d = new Date(t);
+    const p = (n: number) => n.toString().padStart(2, '0');
+    return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  };
 
   const renderBootScreen = () => {
     const barWidth = 20;
@@ -226,6 +328,13 @@ const App: React.FC = () => {
             </div>
           </div>
         </header>
+
+        {/* AUDIO DIAGNOSTICS */}
+        {isAudioStarted && (
+          <div className={`text-[9px] opacity-50 uppercase tracking-[0.2em] mb-3 tabular-nums ${getMotionClass()}`}>
+            AUDIO_DIAG: [ STATE:{audioState?.toString?.().toUpperCase?.() || 'UNK'} ] [ LAST:{formatTimeHMS(lastResumeAt)} ] [ EVT:{lastResumeReason} ] [ RESUMES:{resumeCount} FAILS:{resumeFailCount} ] [ VIS:{pageVisibility.toUpperCase()} ]
+          </div>
+        )}
 
         <div 
           className={`flex-1 relative overflow-hidden border border-current border-opacity-20 flex flex-col ${isFlipping ? 'flip-active' : ''} ${getContrastOpacity()} ${getMotionClass()}`}

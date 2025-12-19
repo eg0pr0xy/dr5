@@ -1,0 +1,157 @@
+0001: 
+0002: import React, { useState, useEffect, useRef } from 'react';
+0003: 
+0004: interface MemoryFragment {
+0005:   x: number;
+0006:   y: number;
+0007:   content: string;
+0008:   opacity: number;
+0009:   life: number;
+0010:   isVibrating: boolean;
+0011: }
+0012: 
+0013: interface MemoryModeProps {
+0014:   audioContext: AudioContext;
+0015:   isAnimated?: boolean;
+0016: }
+0017: 
+0018: const MemoryMode: React.FC<MemoryModeProps> = ({ audioContext, isAnimated }) => {
+0019:   const [fragments, setFragments] = useState<MemoryFragment[]>([]);
+0020:   const [ambientRms, setAmbientRms] = useState(0);
+0021:   const [statusText, setStatusText] = useState("ROOM_IS_EMPTY");
+0022:   const [cutoff, setCutoff] = useState(800);
+0023:   const [q, setQ] = useState(5.0);
+0024:   const [currentStep, setCurrentStep] = useState(0);
+0025:   const [ghostsActive, setGhostsActive] = useState(true);
+0026:   const [pipsActive, setPipsActive] = useState(true);
+0027:   const [droneActive, setDroneActive] = useState(true);
+0028: 
+0029:   const engineRef = useRef<{
+0030:     micStream: MediaStream | null;
+0031:     processor: ScriptProcessorNode | null;
+0032:     buffer: Float32Array;
+0033:     bufferPtr: number;
+0034:     mainGain: GainNode;
+0035:     droneFilter: BiquadFilterNode;
+0036:     droneGain: GainNode;
+0037:     staticGain: GainNode;
+0038:     dustGain: GainNode;
+0039:   } | null>(null);
+0040: 
+0041:   const lastStepTimeRef = useRef<number>(0);
+0042:   const stepIndexRef = useRef<number>(0);
+0043:   const CAGE_FRAGMENTS = ["4'33\"", "SILENCE", "EVENT", "CHANCE", "ROOM", "EMPTY", "I_CHING", "MUSHROOM", "DECAY", "LISTEN"];
+0044:   const FREQ_STEPS = [400, 800, 1200, 300, 2000, 600, 1600, 100];
+0045:   const Q_STEPS = [2, 12, 5, 25, 4, 40, 8, 1];
+0046: 
+0047:   useEffect(() => {
+0048:     const bufferSize = audioContext.sampleRate * 2; 
+0049:     const memoryBuffer = new Float32Array(bufferSize);
+0050:     let ptr = 0;
+0051:     const mainGain = audioContext.createGain();
+0052:     mainGain.gain.setValueAtTime(0.5, audioContext.currentTime);
+0053:     mainGain.connect(audioContext.destination);
+0054:     const droneFilter = audioContext.createBiquadFilter();
+0055:     droneFilter.type = 'bandpass';
+0056:     const staticFilter = audioContext.createBiquadFilter();
+0057:     staticFilter.type = 'highpass';
+0058:     staticFilter.frequency.setValueAtTime(4500, audioContext.currentTime);
+0059:     const staticGain = audioContext.createGain();
+0060:     const dustGain = audioContext.createGain();
+0061:     const noiseBuffer = audioContext.createBuffer(1, audioContext.sampleRate * 2, audioContext.sampleRate);
+0062:     const noiseData = noiseBuffer.getChannelData(0);
+0063:     for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
+0064:     const noiseSource = audioContext.createBufferSource();
+0065:     noiseSource.buffer = noiseBuffer; noiseSource.loop = true;
+0066:     const dustSource = audioContext.createBufferSource();
+0067:     const dustBuffer = audioContext.createBuffer(1, audioContext.sampleRate * 4, audioContext.sampleRate);
+0068:     const dustData = dustBuffer.getChannelData(0);
+0069:     for (let i = 0; i < dustData.length; i++) if (Math.random() > 0.9997) dustData[i] = (Math.random()*2-1)*0.4;
+0070:     dustSource.buffer = dustBuffer; dustSource.loop = true;
+0071:     const droneGain = audioContext.createGain();
+0072:     noiseSource.connect(droneFilter); droneFilter.connect(droneGain); droneGain.connect(mainGain);
+0073:     noiseSource.connect(staticFilter); staticFilter.connect(staticGain); staticGain.connect(mainGain);
+0074:     dustSource.connect(dustGain); dustGain.connect(mainGain);
+0075:     noiseSource.start(); dustSource.start();
+0076: 
+0077:     let micStream: MediaStream | null = null;
+0078:     let processor: ScriptProcessorNode | null = null;
+0079:     const startRecording = async () => {
+0080:       try {
+0081:         micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+0082:         const source = audioContext.createMediaStreamSource(micStream);
+0083:         processor = audioContext.createScriptProcessor(4096, 1, 1);
+0084:         processor.onaudioprocess = (e) => {
+0085:           const input = e.inputBuffer.getChannelData(0);
+0086:           for (let i = 0; i < input.length; i++) { memoryBuffer[ptr] = input[i]; ptr = (ptr + 1) % bufferSize; }
+0087:           let sum = 0; for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+0088:           const rms = Math.sqrt(sum / input.length); setAmbientRms(rms);
+0089:         };
+0090:         source.connect(processor); processor.connect(audioContext.destination); 
+0091:         engineRef.current = { micStream, processor, buffer: memoryBuffer, bufferPtr: ptr, mainGain, droneFilter, droneGain, staticGain, dustGain };
+0092:         const scheduleNextEvent = () => {
+0093:           if (!engineRef.current) return;
+0094:           const time = audioContext.currentTime;
+0095:           if (time - lastStepTimeRef.current > 1.5) {
+0096:             lastStepTimeRef.current = time;
+0097:             stepIndexRef.current = (stepIndexRef.current + 1) % FREQ_STEPS.length;
+0098:             engineRef.current.droneFilter.frequency.setTargetAtTime(FREQ_STEPS[stepIndexRef.current], time, 0.02);
+0099:             engineRef.current.droneFilter.Q.setTargetAtTime(Q_STEPS[stepIndexRef.current], time, 0.02);
+0100:             setCutoff(FREQ_STEPS[stepIndexRef.current]); setQ(Q_STEPS[stepIndexRef.current]); setCurrentStep(stepIndexRef.current);
+0101:           }
+0102:           setTimeout(scheduleNextEvent, 400 + Math.random() * 2000);
+0103:         };
+0104:         scheduleNextEvent();
+0105:       } catch (err) { setStatusText("ERR:MIC_MISSING"); }
+0106:     };
+0107:     startRecording();
+0108:     return () => {
+0109:       if (micStream) micStream.getTracks().forEach(t => t.stop());
+0110:       if (processor) processor.disconnect();
+0111:       noiseSource.stop(); dustSource.stop(); mainGain.disconnect();
+0112:     };
+0113:   }, [audioContext, ghostsActive, pipsActive]);
+0114: 
+0115:   useEffect(() => {
+0116:     const interval = setInterval(() => {
+0117:       setFragments(prev => {
+0118:         const decayed = prev.map(f => ({ ...f, life: f.life - 1, opacity: f.opacity * 0.94 })).filter(f => f.life > 0);
+0119:         if (Math.random() > 0.75) {
+0120:           decayed.push({ x: Math.floor(Math.random() * 80) + 10, y: Math.floor(Math.random() * 80) + 10, content: CAGE_FRAGMENTS[Math.floor(Math.random() * CAGE_FRAGMENTS.length)], opacity: 1, life: 8 + Math.random() * 12, isVibrating: false });
+0121:         }
+0122:         return decayed;
+0123:       });
+0124:     }, 600);
+0125:     return () => clearInterval(interval);
+0126:   }, []);
+0127: 
+0128:   const motionClass = isAnimated ? 'animate-ui-motion' : '';
+0129: 
+0130:   return (
+0131:     <div className={`h-full flex flex-col p-8 overflow-hidden font-mono relative ${motionClass}`}>
+0132:       <header className="flex justify-between items-end text-[9px] opacity-40 mb-8 shrink-0 tracking-[0.3em]">
+0133:         <div className={`flex flex-col ${motionClass}`}>
+0134:           <span>MODE: PREPARED_ROOM</span>
+0135:           <span>STEP: [0{currentStep + 1}/08]</span>
+0136:         </div>
+0137:         <div className={`text-right ${motionClass}`}><span>FRAGMENTS: {fragments.length}</span></div>
+0138:       </header>
+0139:       <div className="flex-1 relative border border-current border-opacity-5 bg-black/5 overflow-hidden">
+0140:         {fragments.map((f, i) => (
+0141:           <div key={i} className={`absolute transition-all whitespace-nowrap ${motionClass}`} style={{ left: `${f.x}%`, top: `${f.y}%`, opacity: f.opacity, fontSize: '10px' }}>
+0142:             [ {f.content} ]
+0143:           </div>
+0144:         ))}
+0145:       </div>
+0146:       <footer className="mt-8 border-t border-current border-opacity-10 pt-6 flex justify-between items-center">
+0147:         <div className="flex gap-4">
+0148:           <span onClick={() => setGhostsActive(!ghostsActive)} className={`text-[10px] cursor-pointer ${ghostsActive ? 'underline' : 'opacity-40'}`}>[ GHOSTS ]</span>
+0149:           <span onClick={() => setDroneActive(!droneActive)} className={`text-[10px] cursor-pointer ${droneActive ? 'underline' : 'opacity-40'}`}>[ STATIC ]</span>
+0150:         </div>
+0151:         <div className={`text-[9px] opacity-40 uppercase ${motionClass}`}>{statusText}</div>
+0152:       </footer>
+0153:     </div>
+0154:   );
+0155: };
+0156: 
+0157: export default MemoryMode;

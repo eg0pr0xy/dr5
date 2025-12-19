@@ -22,8 +22,8 @@ The DR5 station is not a musical tool in the traditional sense; it is a **Signal
 ## SYSTEM MODES
 
 ### 1. RADIO_CORE (DRONE)
-The station’s primary harmonic carrier.
-- **Sonic Engine**: 6-layer additive synthesis with frequency drift.
+
+The stations primary harmonic carrier.
 - **Controls**: `DRIFT` level adjusts phase instability; `FM_MOD` adds metallic sidebands; `SUB_IN` toggles a 27.5Hz fundamental.
 - **Visuals**: A vertical diagnostic of 6 harmonic bands + noise texture.
 
@@ -34,8 +34,8 @@ A spatial resonance simulation that treats the interface as an acoustic room.
 - **Visuals**: A 12x12 matrix of shifting ASCII "energy" cells.
 
 ### 3. MEMORY (THE PREPARED ROOM)
-An environmental feedback loop using the station’s microphone.
-- **Sonic Engine**: 2-second circular buffer that captures the local room state.
+
+An environmental feedback loop using the stations microphone.
 - **Controls**: `GHOSTS` trigger aleatoric re-injection of recorded grains; `PIPS` are prepared sonic incidents.
 - **Visuals**: Fragments of "Cagean" text that vibrate when the room's memory is accessed.
 
@@ -78,3 +78,20 @@ A speculative simulation of a 1950s Electronic Studio.
 
 *"I have nothing to say and I am saying it."*  
 **DR5_STATION // CAGE_EDITION**
+
+---
+
+## PWA INSTALLATION
+
+- Manifest: `public/manifest.webmanifest`
+- Service Worker: `public/sw.js` (offline shell + dynamic icons)
+- Icons: provided dynamically at `/icons/icon-192.png` and `/icons/icon-512.png` by the service worker.
+
+Install steps
+- Desktop (Chrome/Edge): open the app, use 'Install App' from the address bar menu.
+- Android (Chrome): open menu -> 'Install app'.
+- iOS/iPadOS (Safari): Share -> Add to Home Screen.
+
+Offline behavior
+- After the first online load, the app shell (index.html) is cached so navigations work offline.
+- Static assets are cached on first use. Network audio sources (e.g., KHS radio) still require connectivity.

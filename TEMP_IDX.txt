@@ -1,0 +1,46 @@
+0001: 
+0002: <!DOCTYPE html>
+0003: <html lang="en">
+0004:   <head>
+0005:     <meta charset="UTF-8" />
+0006:     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+0007:     <meta name="theme-color" content="#0A0A0A" />
+0008:     <link rel="manifest" href="/manifest.webmanifest" />
+0009:     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+0010:     <title>INSTRUMENT-DR5</title>
+0011:     <script src="https://cdn.tailwindcss.com"></script>
+0012:     <link rel="preconnect" href="https://fonts.googleapis.com">
+0013:     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+0014:     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+0015:     <style>
+0016:       body {
+0017:         margin: 0;
+0018:         padding: 0;
+0019:         overflow: hidden;
+0020:         font-family: 'JetBrains Mono', monospace;
+0021:         -webkit-font-smoothing: none;
+0022:         -moz-osx-font-smoothing: grayscale;
+0023:       }
+0024:       * {
+0025:         box-sizing: border-box;
+0026:         cursor: crosshair;
+0027:       }
+0028:       /* Custom scrollbar for terminal feel */
+0029:       ::-webkit-scrollbar { width: 4px; }
+0030:       ::-webkit-scrollbar-track { background: transparent; }
+0031:       ::-webkit-scrollbar-thumb { background: currentColor; }
+0032:     </style>
+0033:     
+0034:     <script>
+0035:       if ('serviceWorker' in navigator) {
+0036:         window.addEventListener('load', function () {
+0037:           navigator.serviceWorker.register('/sw.js').catch(() => {});
+0038:         });
+0039:       }
+0040:     </script>
+0041:   </head>
+0042:   <body>
+0043:     <div id="root"></div>
+0044:     <script type="module" src="/index.tsx"></script>
+0045:   </body>
+0046: </html>

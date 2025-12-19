@@ -1,4 +1,3 @@
-
 export enum Mode {
   DRONE = 'DRONE',
   ENVIRON = 'ENVIRON',
@@ -26,4 +25,9 @@ export interface DroneState {
   modulationDepth: number;
   noiseLevel: number;
   entropy: number;
+}
+
+export interface MemoryModeProps {
+  audioContext: AudioContext;
+  isAnimated?: boolean;
 }
