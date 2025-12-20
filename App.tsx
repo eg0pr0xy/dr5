@@ -7,6 +7,7 @@ import EnvironMode from './components/EnvironMode';
 import MemoryMode from './components/MemoryMode';
 import GenerativeMode from './components/GenerativeMode';
 import OracleMode from './components/OracleMode';
+import KHSMode from './components/KHSMode';
 
 import Panel from './components/Panel';
 import DevResponsiveTester from './components/DevResponsiveTester';
@@ -52,7 +53,7 @@ const App: React.FC = () => {
   const [bootLogs, setBootLogs] = useState<string[]>([]);
   const [accidents, setAccidents] = useState<Accident[]>([]);
   const [isZenMode, setIsZenMode] = useState(false);
-  const [isAnimatedUI, setIsAnimatedUI] = useState(false);
+  const [isAnimatedUI, setIsAnimatedUI] = useState(true);
   const [isInverted, setIsInverted] = useState(false);
   const [customColors, setCustomColors] = useState({ bg: '#0A0A0A', text: '#E5D9C4' });
   const [rilkeIndex, setRilkeIndex] = useState(0);
@@ -71,6 +72,11 @@ const App: React.FC = () => {
   const [pageVisibility, setPageVisibility] = useState<'visible' | 'hidden'>(
     (typeof document !== 'undefined' ? (document.visibilityState as any) : 'visible')
   );
+  const [tick, setTick] = useState(0);
+  const tickRateRef = useRef({ count: 0, last: performance.now(), hz: 0 });
+  const [debugOverlay, setDebugOverlay] = useState(false);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const [panelOverflow, setPanelOverflow] = useState(false);
 
   const getContrastOpacity = () => {
     switch(contrast) {
@@ -171,14 +177,46 @@ const App: React.FC = () => {
   };
 
   const handleModeChange = (newMode: Mode) => {
-    if (!isAudioStarted || isFlipping || mode === newMode) return;
-    // Ensure audio is resumed when switching modes (mobile safety)
-    ensureResumed('mode_switch');
+    if (isFlipping || mode === newMode) return;
+    if (isAudioStarted) ensureResumed('mode_switch');
     setMode(newMode);
     setIsFlipping(true);
     setTimeout(() => setDisplayMode(newMode), 200);
     setTimeout(() => setIsFlipping(false), 400);
   };
+
+  // central step ticker (~8fps) for UI timing/diagnostics
+  useEffect(() => {
+    const tickInterval = 140;
+    const id = window.setInterval(() => {
+      setTick(v => v + 1);
+      tickRateRef.current.count += 1;
+      const now = performance.now();
+      if (now - tickRateRef.current.last >= 1000) {
+        tickRateRef.current.hz = tickRateRef.current.count;
+        tickRateRef.current.count = 0;
+        tickRateRef.current.last = now;
+      }
+    }, tickInterval);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    const check = () => {
+      setPanelOverflow(el.scrollHeight - 1 > el.clientHeight);
+    };
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  useEffect(() => {
+    const el = panelRef.current;
+    if (!el) return;
+    setPanelOverflow(el.scrollHeight - 1 > el.clientHeight);
+  }, [displayMode, isBooting, isAudioStarted, tick]);
 
   useEffect(() => {
     if (!isAudioStarted) return;
@@ -290,24 +328,43 @@ const App: React.FC = () => {
   };
 
   const getMotionClass = () => isAnimatedUI ? 'animate-ui-motion' : '';
+  const modeLabel = (m: Mode) => m === Mode.DRONE ? 'NIHIL_CORE' : m;
+  const renderActiveMode = () => {
+    switch (displayMode) {
+      case Mode.DRONE:
+        return <DroneMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+      case Mode.ENVIRON:
+        return <EnvironMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+      case Mode.MEMORY:
+        return <MemoryMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} embedded />;
+      case Mode.GENERATIVE:
+        return <GenerativeMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+      case Mode.ORACLE:
+        return <OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+      case Mode.KHS:
+        return <KHSMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+      default:
+        return null;
+    }
+  };
 
   return (
     <div 
-      className={`app-root font-mono select-none transition-all duration-300`}
+      className="app-root font-mono select-none"
       style={{ backgroundColor: colors.bg, color: colors.text, perspective: '1200px', filter: isInverted ? 'invert(1)' : 'none' }}
       onClick={() => { lastInteractRef.current = Date.now(); if (isZenMode) setIsZenMode(false); }}
       onMouseMove={() => { lastInteractRef.current = Date.now(); if (isZenMode) setIsZenMode(false); }}
     >
       <div className="absolute inset-0 pointer-events-none z-[100] overflow-hidden opacity-30">
         {accidents.map((a, i) => (
-          <div key={i} className={`absolute text-[10px] transition-opacity duration-1000 ${getMotionClass()}`} style={{ left: `${a.x}%`, top: `${a.y}%`, opacity: a.life / 10 }}>
+          <div key={i} className={`absolute text-[10px] ${getMotionClass()}`} style={{ left: `${a.x}%`, top: `${a.y}%`, opacity: a.life / 10 }}>
             {a.char}
           </div>
         ))}
       </div>
 
       <div 
-        className="absolute inset-0 pointer-events-none animate-[breath_10s_ease-in-out_infinite]" 
+        className="absolute inset-0 pointer-events-none breath-grid" 
         style={{ 
           backgroundImage: `linear-gradient(${colors.grid} 1px, transparent 1px), linear-gradient(90deg, ${colors.grid} 1px, transparent 1px)`, 
           backgroundSize: '20px 20px' 
@@ -316,7 +373,7 @@ const App: React.FC = () => {
 
       <StatusBar theme={theme} />
 
-      <main className={`content-area relative z-10 flex flex-col p-6 pt-12 pb-2 transition-opacity duration-[2s] ${isZenMode ? 'opacity-5' : 'opacity-100'}`}>
+      <main className={`content-area relative z-10 flex flex-col p-6 pt-12 pb-2 ${isZenMode ? 'opacity-5' : 'opacity-100'}`}>
         <header className={`mb-6 flex flex-col gap-1 shrink-0 ${getMotionClass()}`}>
           <div className="flex justify-between items-baseline text-[9px] opacity-40 uppercase tracking-[0.2em]">
             <span>ENGINE: {isAudioStarted ? (isZenMode ? '4_33_OBSERVATION' : RILKE_FRAGMENTS[rilkeIndex]) : (isBooting ? 'SYNC_ACTIVE' : 'NO_CARRIER')}</span>
@@ -326,7 +383,7 @@ const App: React.FC = () => {
             <div>
               <div className="text-[10px] opacity-50 mb-[-4px]">SIGNAL_CTR</div>
               <h1 className="text-xl font-bold tracking-tight uppercase">
-                {isBooting ? 'BOOT_SEQ' : (mode === Mode.DRONE ? 'RADIO_CORE' : mode)}
+                {isBooting ? 'BOOT_SEQ' : modeLabel(mode)}
               </h1>
             </div>
             <div className="flex flex-col items-end gap-1">
@@ -354,7 +411,8 @@ const App: React.FC = () => {
           </div>
         )}
 
-        <div 
+        <div
+          ref={panelRef}
           className={`flex-1 relative border border-current border-opacity-20 flex flex-col min-h-0 ${isFlipping ? 'flip-active' : ''} ${getContrastOpacity()} ${getMotionClass()}`}
           style={{ transformStyle: 'preserve-3d' }}
         >
@@ -367,7 +425,11 @@ const App: React.FC = () => {
               <div className={`text-[10px] opacity-40 mb-12 uppercase tracking-[0.3em] leading-loose max-w-[240px] ${getMotionClass()}`}>
                 I HAVE NOTHING TO SAY<br/>AND I AM SAYING IT...
               </div>
-              <span onClick={initializeAudio} className="text-xs cursor-pointer tracking-[0.4em] uppercase font-bold border border-current px-6 py-4 hover:bg-current hover:text-black transition-none">
+              <span
+                onClick={initializeAudio}
+                className="enter-btn text-xs cursor-pointer tracking-[0.4em] uppercase font-bold border border-current px-6 py-4 transition-none"
+                style={{ ['--hover-bg' as any]: colors.text, ['--hover-fg' as any]: colors.bg }}
+              >
                 [ ENTER_THE_ROOM ]
               </span>
             </div>
@@ -375,12 +437,11 @@ const App: React.FC = () => {
             renderBootScreen()
           ) : (
             <div className={`w-full h-full content-scroll ${getMotionClass()}`}>
-              <div className="ascii-grid"><Panel title="RADIO_CORE" collapsedOnXs><DroneMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} /></Panel></div>
-              <div className="ascii-grid"><Panel title="ENVIRON" collapsedOnXs><EnvironMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} /></Panel></div>
-              <div className="ascii-grid"><Panel title="MEMORY" collapsedOnXs><MemoryMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} embedded /></Panel></div>
-              <div className="ascii-grid"><Panel title="GENERATIVE" collapsedOnXs><GenerativeMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} /></Panel></div>
-              <div className="ascii-grid"><Panel title="ORACLE" collapsedOnXs><OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} /></Panel></div>
-              <div className="ascii-grid"><Panel title="KHS" collapsedOnXs><KHSMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} /></Panel></div>
+              <div className="ascii-grid" style={{ gridTemplateColumns: 'repeat(var(--cols), minmax(0, 1fr))' }}>
+                <Panel title={modeLabel(displayMode)} collapsedOnXs>
+                  {renderActiveMode()}
+                </Panel>
+              </div>
             </div>
           )}
         </div>
@@ -392,21 +453,25 @@ const App: React.FC = () => {
                 key={m}
                 onClick={() => handleModeChange(m)}
                 className={`text-[11px] tracking-widest uppercase whitespace-nowrap ${getMotionClass()} ${
-                  !isAudioStarted ? 'opacity-10 cursor-not-allowed' :
                   mode === m ? 'font-bold underline cursor-pointer' : 'opacity-40 hover:opacity-100 cursor-pointer'
                 }`}
               >
-                {m}
+                {modeLabel(m)}
               </span>
             ))}
           </div>
+          {import.meta.env.DEV && (
+            <span className="text-[10px] opacity-60 cursor-pointer ml-4" onClick={() => setDebugOverlay(v => !v)}>
+              [ DEBUG_OVERLAY ]
+            </span>
+          )}
         </nav>
       </main>
 
       {showInfo && (
         <div className="absolute inset-0 z-[200] flex items-center justify-center bg-current bg-opacity-[0.06]" onClick={closeInfo}>
           <div className="info-card border border-current p-0 m-0" onClick={e => e.stopPropagation()} style={{ perspective: '1200px' }}>
-            <div className={`card-inner ${infoFlipped ? 'flipped' : ''}`} style={{ transformStyle: 'preserve-3d', transition: 'transform 0.6s ease' }}>
+            <div className={`card-inner ${infoFlipped ? 'flipped' : ''}`} style={{ transformStyle: 'preserve-3d', transition: 'transform 0.6s steps(6, end)' }}>
               <div className="card-face front border border-current bg-transparent" style={{ backfaceVisibility: 'hidden', padding: '12px', width: '320px', height: '200px' }}>
                 <div className="h-full w-full flex flex-col justify-between">
                   <div className="text-[11px] uppercase tracking-[0.3em] opacity-60">INFORMATION_CARD</div>
@@ -429,6 +494,14 @@ const App: React.FC = () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+      {import.meta.env.DEV && debugOverlay && (
+        <div className="absolute top-12 right-4 z-[300] text-[10px] p-3 border border-current bg-black bg-opacity-70 max-w-[260px] space-y-1">
+          <div>VIEWPORT: {window.innerWidth}x{window.innerHeight}</div>
+          <div>MODE: {displayMode}</div>
+          <div>TICK_HZ: {tickRateRef.current.hz.toFixed(0)}</div>
+          <div>OVERFLOW: {panelOverflow ? 'YES' : 'NO'} ({panelRef.current?.clientHeight ?? 0}/{panelRef.current?.scrollHeight ?? 0})</div>
         </div>
       )}
       {import.meta.env.DEV && showResp && (
@@ -457,6 +530,9 @@ const App: React.FC = () => {
           80% { transform: translate(1px, 1px) skew(-0.3deg); }
           100% { transform: translate(0, 0) skew(0deg); }
         }
+        .breath-grid {
+          animation: breath 10s steps(10, end) infinite;
+        }
         .animate-ui-motion {
           animation: ui-motion 0.2s steps(4) infinite;
         }
@@ -466,6 +542,7 @@ const App: React.FC = () => {
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         .info-card .card-inner.flipped { transform: rotateY(180deg); }
+        .enter-btn:hover { background: var(--hover-bg); color: var(--hover-fg); }
       `}</style>
     </div>
   );

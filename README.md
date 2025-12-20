@@ -81,6 +81,17 @@ A speculative simulation of a 1950s Electronic Studio.
 
 ---
 
+## UI INVARIANTS (DO NOT BREAK)
+
+- Monospace only, ASCII-first visuals; grid overlay stays visible; no rounded corners, shadows, gradients, or icons.
+- Step-based motion only (150–600ms ticks); no smooth CSS transitions or rAF-driven UI loops; use discrete keyframe steps.
+- Navigation is minimal text toggles; mode switches must update the active view without gating or duplicated handlers.
+- Layout uses explicit grid/flex with `min-height: 0` scroll containers; no fixed heights without a scrollable region.
+- Respect vh/dvh quirks by keeping the root container height-managed and avoiding scroll hijacks on mobile.
+- Panels/ASCII blocks render with `white-space: pre` and snap to the grid; opacity/contrast controls should not change geometry.
+
+---
+
 ## PWA INSTALLATION
 
 - Manifest: `public/manifest.webmanifest`
