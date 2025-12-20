@@ -1,13 +1,13 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 
 interface DroneModeProps {
   audioContext: AudioContext;
   isAnimated?: boolean;
   embedded?: boolean;
+  isMobile?: boolean;
 }
 
-const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedded }) => {
+const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedded, isMobile = false }) => {
   const [visData, setVisData] = useState<number[]>(new Array(6).fill(0));
   const [noiseVisData, setNoiseVisData] = useState(0);
   const [cutoff, setCutoff] = useState(400);
@@ -34,6 +34,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
 
   const lastStepTimeRef = useRef<number>(0);
   const stepDurationRef = useRef<number>(1.0);
+  const animationFrameRef = useRef<number | null>(null);
 
   const CHAR_SETS = [
     ["·", "░", "▒", "▓", "█"],
@@ -44,6 +45,43 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
     ["·", "'", "^", "*", "†"],
     ["·", "░", "▒", "▓", "█"]
   ];
+
+  // Mobile-optimized animation loop using requestAnimationFrame
+  const useAnimationFrame = () => {
+    if (!engineRef.current) return;
+    const time = audioContext.currentTime;
+    setFlickerFrame(prev => (prev + 1) % 120);
+    if (time - lastStepTimeRef.current > stepDurationRef.current) {
+      lastStepTimeRef.current = time;
+      stepDurationRef.current = 0.5 + Math.random() * 3.0;
+      const chance = Math.random();
+      if (chance > 0.5) {
+        const targetCutoff = 100 + (Math.random() * 3 * 350);
+        engineRef.current.filter.frequency.setTargetAtTime(targetCutoff, time, 0.05);
+        setCutoff(Math.floor(targetCutoff));
+        setLastStepType("FRQ_STEP");
+      } else {
+        const targetQ = [1, 4, 12, 25, 40][Math.floor(Math.random() * 5)];
+        engineRef.current.filter.Q.setTargetAtTime(targetQ, time, 0.08);
+        setResonance(targetQ);
+        setLastStepType("RES_STEP");
+      }
+    }
+    const getAmplitude = (analyser: AnalyserNode) => {
+      const dataArray = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(dataArray);
+      let maxVal = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const val = Math.abs(dataArray[i] - 128);
+        if (val > maxVal) maxVal = val;
+      }
+      return Math.floor((maxVal / 128) * 100);
+    };
+    const newData = engineRef.current.analysers.map(ana => getAmplitude(ana));
+    setVisData(newData);
+    setNoiseVisData(getAmplitude(engineRef.current.noiseAnalyser));
+    setSignalStrength(Math.floor((newData.reduce((a, b) => a + b, 0) / 600) * 100 + (Math.random() * 5)));
+  };
 
   useEffect(() => {
     if (audioContext.state === 'suspended') {
@@ -120,44 +158,23 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
     mainGain.connect(audioContext.destination);
     engineRef.current = { oscillators, gains, filter, noise: noiseSource, analysers, noiseAnalyser, pitchLfos, subOsc, subGain };
 
+    // Use requestAnimationFrame for smoother mobile performance
+    const animate = () => {
+      useAnimationFrame();
+      animationFrameRef.current = requestAnimationFrame(animate);
+    };
+    
+    // Slower update rate on mobile to save battery
+    const updateDelay = isMobile ? 100 : 50;
     const updateInterval = setInterval(() => {
-      if (!engineRef.current) return;
-      const time = audioContext.currentTime;
-      setFlickerFrame(prev => (prev + 1) % 120);
-      if (time - lastStepTimeRef.current > stepDurationRef.current) {
-        lastStepTimeRef.current = time;
-        stepDurationRef.current = 0.5 + Math.random() * 3.0;
-        const chance = Math.random();
-        if (chance > 0.5) {
-          const targetCutoff = 100 + (Math.random() * 3 * 350);
-          engineRef.current.filter.frequency.setTargetAtTime(targetCutoff, time, 0.05);
-          setCutoff(Math.floor(targetCutoff));
-          setLastStepType("FRQ_STEP");
-        } else {
-          const targetQ = [1, 4, 12, 25, 40][Math.floor(Math.random() * 5)];
-          engineRef.current.filter.Q.setTargetAtTime(targetQ, time, 0.08);
-          setResonance(targetQ);
-          setLastStepType("RES_STEP");
-        }
-      }
-      const getAmplitude = (analyser: AnalyserNode) => {
-        const dataArray = new Uint8Array(analyser.fftSize);
-        analyser.getByteTimeDomainData(dataArray);
-        let maxVal = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          const val = Math.abs(dataArray[i] - 128);
-          if (val > maxVal) maxVal = val;
-        }
-        return Math.floor((maxVal / 128) * 100);
-      };
-      const newData = engineRef.current.analysers.map(ana => getAmplitude(ana));
-      setVisData(newData);
-      setNoiseVisData(getAmplitude(engineRef.current.noiseAnalyser));
-      setSignalStrength(Math.floor((newData.reduce((a, b) => a + b, 0) / 600) * 100 + (Math.random() * 5)));
-    }, 50);
+      useAnimationFrame();
+    }, updateDelay);
 
     return () => {
       clearInterval(updateInterval);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
       if (engineRef.current) {
         engineRef.current.oscillators.forEach(o => o.stop());
         engineRef.current.noise.stop();
@@ -166,7 +183,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
       }
       mainGain.disconnect();
     };
-  }, [audioContext, fmActive]);
+  }, [audioContext, fmActive, isMobile]);
 
   useEffect(() => {
     if (!engineRef.current) return;
@@ -180,9 +197,11 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
   const [scan, setScan] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setScan(v => (v + 2) % 100), 90);
+    // Slower scan on mobile to save battery
+    const scanDelay = isMobile ? 150 : 90;
+    const id = setInterval(() => setScan(v => (v + 2) % 100), scanDelay);
     return () => clearInterval(id);
-  }, []);
+  }, [isMobile]);
 
   return (
     <div className={`h-full flex flex-col ${embedded ? 'p-2' : 'p-6'} overflow-hidden font-mono ${motionClass}`}>

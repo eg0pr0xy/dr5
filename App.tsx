@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Mode, Theme } from './types';
 import StatusBar from './components/StatusBar';
@@ -77,6 +76,35 @@ const App: React.FC = () => {
   const [debugOverlay, setDebugOverlay] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [panelOverflow, setPanelOverflow] = useState(false);
+
+  // Mobile detection and reduced motion preference
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // Detect mobile and reduced motion preferences
+  useEffect(() => {
+    const checkMobileAndMotion = () => {
+      const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) || window.innerWidth <= 768;
+      const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      setIsMobile(mobile);
+      setPrefersReducedMotion(reducedMotion);
+      
+      // Auto-disable animations on mobile if reduced motion is preferred
+      if (mobile && reducedMotion && isAnimatedUI) {
+        setIsAnimatedUI(false);
+      }
+    };
+
+    checkMobileAndMotion();
+    window.addEventListener('resize', checkMobileAndMotion);
+    const motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+    motionQuery.addListener(checkMobileAndMotion);
+    
+    return () => {
+      window.removeEventListener('resize', checkMobileAndMotion);
+      motionQuery.removeListener(checkMobileAndMotion);
+    };
+  }, [isAnimatedUI]);
 
   const getContrastOpacity = () => {
     switch(contrast) {
@@ -185,9 +213,9 @@ const App: React.FC = () => {
     setTimeout(() => setIsFlipping(false), 400);
   };
 
-  // central step ticker (~8fps) for UI timing/diagnostics
+  // central step ticker (~8fps) for UI timing/diagnostics - optimized for mobile
   useEffect(() => {
-    const tickInterval = 140;
+    const tickInterval = isMobile ? 200 : 140; // Slower on mobile to save battery
     const id = window.setInterval(() => {
       setTick(v => v + 1);
       tickRateRef.current.count += 1;
@@ -199,7 +227,7 @@ const App: React.FC = () => {
       }
     }, tickInterval);
     return () => window.clearInterval(id);
-  }, []);
+  }, [isMobile]);
 
   useEffect(() => {
     const el = panelRef.current;
@@ -238,14 +266,15 @@ const App: React.FC = () => {
           life: 5 + Math.random() * 10
         }]);
       }
-      setTimeout(spawnAccident, 500 + Math.random() * 3000);
+      const delay = isMobile ? 1000 + Math.random() * 4000 : 500 + Math.random() * 3000; // Slower on mobile
+      setTimeout(spawnAccident, delay);
     };
     spawnAccident();
     const decayInterval = setInterval(() => {
       setAccidents(prev => prev.map(a => ({ ...a, life: a.life - 1 })).filter(a => a.life > 0));
     }, 1000);
     return () => { clearInterval(decayInterval); };
-  }, [isAudioStarted]);
+  }, [isAudioStarted, isMobile]);
 
   useEffect(() => {
     if (isBooting) {
@@ -327,22 +356,27 @@ const App: React.FC = () => {
     );
   };
 
-  const getMotionClass = () => isAnimatedUI ? 'animate-ui-motion' : '';
+  const getMotionClass = () => {
+    // Disable animations on mobile if reduced motion is preferred
+    if (isMobile && prefersReducedMotion) return '';
+    return isAnimatedUI ? 'animate-ui-motion' : '';
+  };
+
   const modeLabel = (m: Mode) => m === Mode.DRONE ? 'NIHIL_CORE' : m;
   const renderActiveMode = () => {
     switch (displayMode) {
       case Mode.DRONE:
-        return <DroneMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+        return <DroneMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       case Mode.ENVIRON:
-        return <EnvironMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+        return <EnvironMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       case Mode.MEMORY:
-        return <MemoryMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} embedded />;
+        return <MemoryMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} embedded isMobile={isMobile} />;
       case Mode.GENERATIVE:
-        return <GenerativeMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+        return <GenerativeMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       case Mode.ORACLE:
-        return <OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+        return <OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       case Mode.KHS:
-        return <KHSMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} />;
+        return <KHSMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       default:
         return null;
     }
@@ -502,6 +536,8 @@ const App: React.FC = () => {
           <div>MODE: {displayMode}</div>
           <div>TICK_HZ: {tickRateRef.current.hz.toFixed(0)}</div>
           <div>OVERFLOW: {panelOverflow ? 'YES' : 'NO'} ({panelRef.current?.clientHeight ?? 0}/{panelRef.current?.scrollHeight ?? 0})</div>
+          <div>MOBILE: {isMobile ? 'YES' : 'NO'}</div>
+          <div>REDUCED_MOTION: {prefersReducedMotion ? 'YES' : 'NO'}</div>
         </div>
       )}
       {import.meta.env.DEV && showResp && (
@@ -524,17 +560,21 @@ const App: React.FC = () => {
         }
         @keyframes ui-motion {
           0% { transform: translate(0, 0) skew(0deg); }
-          20% { transform: translate(-1px, 1px) skew(0.5deg); }
-          40% { transform: translate(1px, -1px) skew(-0.5deg); }
-          60% { transform: translate(-1px, -1px) skew(0.3deg); }
-          80% { transform: translate(1px, 1px) skew(-0.3deg); }
+          20% { transform: translate(-0.5px, 0.5px) skew(0.2deg); }
+          40% { transform: translate(0.5px, -0.5px) skew(-0.2deg); }
+          60% { transform: translate(-0.5px, -0.5px) skew(0.1deg); }
+          80% { transform: translate(0.5px, 0.5px) skew(-0.1deg); }
           100% { transform: translate(0, 0) skew(0deg); }
         }
         .breath-grid {
           animation: breath 10s steps(10, end) infinite;
         }
         .animate-ui-motion {
-          animation: ui-motion 0.2s steps(4) infinite;
+          animation: ui-motion 0.3s steps(4) infinite;
+          /* Respect prefers-reduced-motion */
+          @media (prefers-reduced-motion: reduce) {
+            animation: none;
+          }
         }
         .flip-active {
           animation: flip-step 0.4s steps(6) forwards;

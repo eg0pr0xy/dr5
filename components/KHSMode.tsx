@@ -2,17 +2,25 @@ import React, { useEffect, useRef, useState } from 'react';
 import type { KHSModeProps } from '../types/audio';
 import { useKHSAudio } from '../hooks/useKHSAudio';
 
-const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated }) => {
+const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = false }) => {
   const { diag, radioActive, setRadioActive } = useKHSAudio(audioContext);
   const [activePermIndex, setActivePermIndex] = useState(0);
   const [matrixTick, setMatrixTick] = useState(0);
+  const animationFrameRef = useRef<number | null>(null);
   const serialMatrix = useRef<number[][]>(
     Array.from({ length: 14 }, () => Array.from({ length: 14 }, () => Math.random() > 0.5 ? 1 : 0))
   );
-  useEffect(() => { const id = window.setInterval(() => setActivePermIndex(p => (p + 1) % 14), 400); return () => window.clearInterval(id); }, []);
+  
+  useEffect(() => {
+    // Slower animation on mobile to save battery
+    const delay = isMobile ? 600 : 400;
+    const id = window.setInterval(() => setActivePermIndex(p => (p + 1) % 14), delay);
+    return () => window.clearInterval(id);
+  }, [isMobile]);
+  
   // Complex ASCII animation: ripple + random twinkle based on moment state
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const animate = () => {
       const m = serialMatrix.current;
       const t = matrixTick + (diag.momentId % 7);
       for (let r = 0; r < 14; r++) {
@@ -24,9 +32,27 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated }) => {
         }
       }
       setMatrixTick((v) => (v + 1) % 1000);
-    }, 120);
-    return () => window.clearInterval(id);
-  }, [diag.momentId, matrixTick]);
+    };
+
+    // Use requestAnimationFrame for smoother mobile performance
+    const updateMatrix = () => {
+      animate();
+      animationFrameRef.current = requestAnimationFrame(updateMatrix);
+    };
+    
+    // Slower update rate on mobile to save battery
+    const updateDelay = isMobile ? 180 : 120;
+    const id = window.setInterval(() => {
+      animate();
+    }, updateDelay);
+
+    return () => {
+      clearInterval(id);
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [diag.momentId, matrixTick, isMobile]);
 
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
   return (

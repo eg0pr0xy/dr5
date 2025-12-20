@@ -7,7 +7,7 @@ import MemoryHeader from './MemoryHeader';
 import MemoryVisualization from './MemoryVisualization';
 import MemoryFooter from './MemoryFooter';
 
-const MemoryMode: React.FC<MemoryModeProps> = ({ audioContext, isAnimated, embedded }) => {
+const MemoryMode: React.FC<MemoryModeProps> = ({ audioContext, isAnimated, embedded, isMobile = false }) => {
   const { engine, diagnostics, isInitialized, error } = useMemoryAudioEngine(audioContext);
   const fragments = useMemoryFragments();
   const touchField = useTouchField(engine);
@@ -41,15 +41,16 @@ const MemoryMode: React.FC<MemoryModeProps> = ({ audioContext, isAnimated, embed
         fragments={fragments} 
         touchField={touchField}
         isAnimated={isAnimated}
+        isMobile={isMobile}
       />
       <MemoryFooter 
         engine={engine} 
         diagnostics={diagnostics}
         isAnimated={isAnimated}
+        isMobile={isMobile}
       />
     </div>
   );
 };
 
 export default MemoryMode;
-

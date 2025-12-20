@@ -6,10 +6,11 @@ interface MemoryFooterProps {
   engine: MemoryAudioEngine | null;
   diagnostics: MemoryDiagnostics | null;
   isAnimated: boolean;
+  isMobile?: boolean;
 }
 
 const MemoryFooter: React.FC<MemoryFooterProps> = ({ 
-  engine, diagnostics, isAnimated 
+  engine, diagnostics, isAnimated, isMobile = false 
 }) => {
   const [ghostsActive, setGhostsActive] = React.useState(true);
   const [droneActive, setDroneActive] = React.useState(true);

@@ -5,21 +5,21 @@ interface MemoryVisualizationProps {
   fragments: MemoryFragment[];
   touchField: { state: TouchFieldState; handlers: any };
   isAnimated: boolean;
+  isMobile?: boolean;
 }
 
 const MemoryVisualization: React.FC<MemoryVisualizationProps> = ({ 
-  fragments, touchField, isAnimated 
+  fragments, touchField, isAnimated, isMobile = false 
 }) => {
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
   const [scan, setScan] = useState(0);
+  
   useEffect(() => {
-    const id = window.setInterval(() => setScan(v => (v + 3) % 100), 80);
+    // Slower scan on mobile to save battery
+    const scanDelay = isMobile ? 120 : 80;
+    const id = window.setInterval(() => setScan(v => (v + 3) % 100), scanDelay);
     return () => window.clearInterval(id);
-  }, []);
-      {/* Scan line animation */}
-      <div className="absolute left-0 right-0" style={{ top: `${scan}%`, opacity: 0.15 }}>
-        <div className="w-full h-[1px] bg-current"></div>
-      </div>
+  }, [isMobile]);
 
   return (
     <div className="flex-1 w-full h-full relative border border-current border-opacity-5 bg-black/5 overflow-hidden">
@@ -40,6 +40,11 @@ const MemoryVisualization: React.FC<MemoryVisualizationProps> = ({
       {/* Touch diagnostics */}
       <div className={`absolute left-2 bottom-2 text-[9px] opacity-60 uppercase tracking-[0.2em] tabular-nums ${motionClass}`}>
         TCH_DIAG: [ WIDTH:{touchField.state.grainWidth}MS ] [ TILT:{touchField.state.tilt.toFixed(2)} ] [ DENS:{touchField.state.density.toFixed(2)} ] [ {touchField.state.isActive ? 'ACTIVE' : 'IDLE'} ]
+      </div>
+      
+      {/* Scan line animation */}
+      <div className="absolute left-0 right-0" style={{ top: `${scan}%`, opacity: 0.15 }}>
+        <div className="w-full h-[1px] bg-current"></div>
       </div>
     </div>
   );

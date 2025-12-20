@@ -64,7 +64,12 @@ export interface KHSState {
   spectralDensity: number[];
 }
 
-export interface MemoryModeProps {\n  audioContext: AudioContext;\n  isAnimated?: boolean;\n  embedded?: boolean;\n}
+export interface MemoryModeProps {
+  audioContext: AudioContext;
+  isAnimated?: boolean;
+  embedded?: boolean;
+  isMobile?: boolean;
+}
 
 export interface MemoryFragment {
   x: number;
@@ -79,6 +84,7 @@ export interface KHSModeProps {
   audioContext: AudioContext;
   isAnimated?: boolean;
   embedded?: boolean;
+  isMobile?: boolean;
 }
 
 export interface TouchFieldState {
