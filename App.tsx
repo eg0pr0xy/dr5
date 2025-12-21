@@ -222,29 +222,71 @@ const App: React.FC = () => {
     }
   };
 
-  const initializeAudio = () => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-      // Track state changes
-      audioContextRef.current.onstatechange = () => {
-        setAudioState((audioContextRef.current as any)?.state || 'unknown');
-      };
-    }
-    // Attempt to resume on user gesture
-    ensureResumed('ENTER_THE_ROOM');
-    // Silent unlock pulse (iOS safety)
+  const initializeAudio = async () => {
     try {
-      const ctx = audioContextRef.current!;
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0, ctx.currentTime);
-      g.connect(ctx.destination);
-      const o = ctx.createOscillator();
-      o.frequency.setValueAtTime(1, ctx.currentTime);
-      o.connect(g);
-      o.start();
-      o.stop(ctx.currentTime + 0.05);
-    } catch {}
-    setIsBooting(true);
+      // Create AudioContext if needed
+      if (!audioContextRef.current) {
+        const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+        audioContextRef.current = new AudioContextClass();
+
+        // Track state changes
+        audioContextRef.current.onstatechange = () => {
+          setAudioState((audioContextRef.current as any)?.state || 'unknown');
+        };
+      }
+
+      const ctx = audioContextRef.current;
+
+      // Handle mobile-specific audio initialization
+      if (isMobile) {
+        // On mobile, we need to be more careful about audio context state
+        if (ctx.state === 'suspended') {
+          try {
+            await ctx.resume();
+            console.log('AudioContext resumed on mobile');
+          } catch (error) {
+            console.warn('Failed to resume AudioContext on mobile:', error);
+          }
+        }
+
+        // Create a silent audio graph to "unlock" mobile audio
+        // This helps with iOS Safari's strict audio policies
+        const unlockBuffer = ctx.createBuffer(1, 1, 22050);
+        const unlockSource = ctx.createBufferSource();
+        unlockSource.buffer = unlockBuffer;
+        unlockSource.connect(ctx.destination);
+        unlockSource.start();
+
+        // Add a short delay before proceeding
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      // Attempt to resume on user gesture (works on desktop)
+      await ensureResumed('ENTER_THE_ROOM');
+
+      // Additional unlock pulse for stubborn mobile browsers
+      try {
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0, ctx.currentTime);
+        g.connect(ctx.destination);
+        const o = ctx.createOscillator();
+        o.frequency.setValueAtTime(1, ctx.currentTime);
+        o.connect(g);
+        o.start();
+        o.stop(ctx.currentTime + 0.05);
+        console.log('Audio unlock pulse sent');
+      } catch (error) {
+        console.warn('Audio unlock pulse failed:', error);
+      }
+
+      setIsBooting(true);
+      console.log('Audio initialization completed');
+    } catch (error) {
+      console.error('Audio initialization failed:', error);
+      // Still proceed to booting state even if audio fails
+      // This allows the UI to work even without sound
+      setIsBooting(true);
+    }
   };
 
   const handleModeChange = (newMode: Mode) => {

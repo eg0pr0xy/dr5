@@ -443,7 +443,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
             return (
               <div
                 key={invader.id}
-                className="absolute text-green-400 animate-pulse"
+                className="absolute text-current animate-pulse opacity-80"
                 style={{
                   left: `${10 + invader.x * 8}%`,
                   top: `${10 + invader.y * 8}%`,
@@ -458,12 +458,11 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
 
           {/* Player Ship */}
           <div
-            className="absolute text-blue-400"
+            className="absolute text-current font-bold"
             style={{
               left: `${10 + playerShip.x * 8}%`,
               top: `${10 + playerShip.y * 8}%`,
-              fontSize: '14px',
-              fontWeight: 'bold'
+              fontSize: '14px'
             }}
           >
             [⯈]
@@ -473,7 +472,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
           {bullets.map(bullet => (
             <div
               key={bullet.id}
-              className="absolute text-yellow-400"
+              className="absolute text-current opacity-90"
               style={{
                 left: `${10 + bullet.x * 8}%`,
                 top: `${10 + bullet.y * 8}%`,
@@ -488,7 +487,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
           {invaderBullets.map(bullet => (
             <div
               key={bullet.id}
-              className="absolute text-red-400 animate-pulse"
+              className="absolute text-current opacity-70 animate-pulse"
               style={{
                 left: `${10 + bullet.x * 8}%`,
                 top: `${10 + bullet.y * 8}%`,
