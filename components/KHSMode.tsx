@@ -32,7 +32,7 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
       }
       setMatrixTick((v) => (v + 1) % 1000);
     };
-    
+
     // Slower update rate on mobile to save battery
     const updateDelay = isMobile ? 180 : 120;
     const id = window.setInterval(() => {
@@ -43,6 +43,12 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
       clearInterval(id);
     };
   }, [diag.momentId, matrixTick, isMobile]);
+
+  // Force animation update when diagnostics change
+  useEffect(() => {
+    // This ensures the animation updates when audio diagnostics change
+    setMatrixTick(prev => prev + 1);
+  }, [diag]);
 
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
   return (

@@ -61,7 +61,7 @@ export class KHSAudioEngine {
     this.hpf.connect(this.comp);
     this.comp.connect(this.mainGain);
     this.mainGain.connect(audioContext.destination);
-    this.buildGraph();
+    // Don't build/start audio sources here - wait for start() method
   }
 
   onDiagnostics(cb: (s: KHSState) => void) { this.onDiag = cb; }
@@ -327,6 +327,8 @@ export class KHSAudioEngine {
   }
 
   start() {
+    // Build and start audio sources now that AudioContext should be running
+    this.buildGraph();
     this.scheduleNewMoment();
     this.momentTimer = window.setInterval(() => { const t = this.audioContext.currentTime; if (t >= this.moment.nextAt) this.scheduleNewMoment(); }, 1000);
     this.diagTimer = window.setInterval(() => {

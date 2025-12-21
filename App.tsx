@@ -239,26 +239,52 @@ const App: React.FC = () => {
 
       // Handle mobile-specific audio initialization
       if (isMobile) {
-        // On mobile, we need to be more careful about audio context state
+        console.log('Mobile audio initialization starting...');
+
+        // On mobile, AudioContext starts suspended - resume it
         if (ctx.state === 'suspended') {
           try {
             await ctx.resume();
-            console.log('AudioContext resumed on mobile');
+            console.log('AudioContext resumed on mobile, state:', ctx.state);
           } catch (error) {
             console.warn('Failed to resume AudioContext on mobile:', error);
           }
         }
 
-        // Create a silent audio graph to "unlock" mobile audio
-        // This helps with iOS Safari's strict audio policies
-        const unlockBuffer = ctx.createBuffer(1, 1, 22050);
-        const unlockSource = ctx.createBufferSource();
-        unlockSource.buffer = unlockBuffer;
-        unlockSource.connect(ctx.destination);
-        unlockSource.start();
+        // Multiple unlock attempts for stubborn mobile browsers
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            // Create a silent audio graph to "unlock" mobile audio
+            const unlockBuffer = ctx.createBuffer(1, 1, 22050);
+            const unlockSource = ctx.createBufferSource();
+            unlockSource.buffer = unlockBuffer;
+            unlockSource.connect(ctx.destination);
+            unlockSource.start(ctx.currentTime);
+            unlockSource.stop(ctx.currentTime + 0.01);
 
-        // Add a short delay before proceeding
-        await new Promise(resolve => setTimeout(resolve, 100));
+            // Also try an oscillator unlock
+            const unlockOsc = ctx.createOscillator();
+            const unlockGain = ctx.createGain();
+            unlockOsc.frequency.setValueAtTime(1, ctx.currentTime);
+            unlockGain.gain.setValueAtTime(0, ctx.currentTime);
+            unlockOsc.connect(unlockGain);
+            unlockGain.connect(ctx.destination);
+            unlockOsc.start(ctx.currentTime);
+            unlockOsc.stop(ctx.currentTime + 0.01);
+
+            console.log(`Mobile audio unlock attempt ${attempt + 1} completed`);
+            break; // If successful, break out of retry loop
+          } catch (error) {
+            console.warn(`Mobile audio unlock attempt ${attempt + 1} failed:`, error);
+            if (attempt === 2) {
+              console.error('All mobile audio unlock attempts failed');
+            }
+          }
+        }
+
+        // Wait a bit for unlock to take effect
+        await new Promise(resolve => setTimeout(resolve, 200));
+        console.log('Mobile audio initialization complete, context state:', ctx.state);
       }
 
       // Attempt to resume on user gesture (works on desktop)
