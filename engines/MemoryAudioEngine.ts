@@ -251,7 +251,8 @@ export class MemoryAudioEngine {
       osc.frequency.setValueAtTime(freq, this.audioContext.currentTime);
 
       const gain = this.audioContext.createGain();
-      gain.gain.setValueAtTime(0.08, this.audioContext.currentTime); // Increased volume
+      // Significantly increased volume for mobile audibility
+      gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
 
       // Add slow LFO modulation
       const lfo = this.audioContext.createOscillator();
