@@ -9,12 +9,28 @@ export const useKHSAudio = (audioContext: AudioContext | null) => {
 
   useEffect(() => {
     if (!audioContext) return;
-    if (audioContext.state === 'suspended') { try { audioContext.resume(); } catch {} }
-    const engine = new KHSAudioEngine(audioContext);
-    engine.onDiagnostics(setDiag);
-    engine.start();
-    engineRef.current = engine;
-    return () => { try { engine.dispose(); } catch {} };
+
+    const startEngine = async () => {
+      try {
+        // Ensure AudioContext is running before starting engine
+        if (audioContext.state === 'suspended') {
+          console.log('useKHSAudio: Resuming suspended AudioContext');
+          await audioContext.resume();
+        }
+
+        const engine = new KHSAudioEngine(audioContext);
+        engine.onDiagnostics(setDiag);
+        engine.start();
+        engineRef.current = engine;
+        console.log('useKHSAudio: KHS engine started successfully');
+      } catch (error) {
+        console.error('useKHSAudio: Failed to start KHS engine:', error);
+      }
+    };
+
+    startEngine();
+
+    return () => { try { engineRef.current?.dispose(); } catch {} };
   }, [audioContext]);
 
   useEffect(() => {
@@ -24,4 +40,3 @@ export const useKHSAudio = (audioContext: AudioContext | null) => {
 
   return { diag, radioActive, setRadioActive };
 };
-

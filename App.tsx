@@ -290,6 +290,9 @@ const App: React.FC = () => {
       // Attempt to resume on user gesture (works on desktop)
       await ensureResumed('ENTER_THE_ROOM');
 
+      // Wait a bit for resume to take effect
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       // Additional unlock pulse for stubborn mobile browsers
       try {
         const g = ctx.createGain();
@@ -298,15 +301,27 @@ const App: React.FC = () => {
         const o = ctx.createOscillator();
         o.frequency.setValueAtTime(1, ctx.currentTime);
         o.connect(g);
-        o.start();
+        o.start(ctx.currentTime);
         o.stop(ctx.currentTime + 0.05);
-        console.log('Audio unlock pulse sent');
+        console.log('Audio unlock pulse sent, context state:', ctx.state);
       } catch (error) {
         console.warn('Audio unlock pulse failed:', error);
       }
 
+      // Final check that AudioContext is running
+      if (ctx.state !== 'running') {
+        console.warn('AudioContext still not running after unlock attempts, state:', ctx.state);
+        // Try one more resume attempt
+        try {
+          await ctx.resume();
+          console.log('Final resume attempt, context state:', ctx.state);
+        } catch (finalError) {
+          console.error('Final resume attempt failed:', finalError);
+        }
+      }
+
       setIsBooting(true);
-      console.log('Audio initialization completed');
+      console.log('Audio initialization completed, final context state:', ctx.state);
     } catch (error) {
       console.error('Audio initialization failed:', error);
       // Still proceed to booting state even if audio fails
@@ -315,9 +330,15 @@ const App: React.FC = () => {
     }
   };
 
-  const handleModeChange = (newMode: Mode) => {
+  const handleModeChange = async (newMode: Mode) => {
     if (isFlipping || mode === newMode) return;
-    if (isAudioStarted) ensureResumed('mode_switch');
+
+    if (isAudioStarted) {
+      await ensureResumed('mode_switch');
+      // Additional delay to ensure AudioContext is fully ready
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
     setMode(newMode);
     setIsFlipping(true);
     setTimeout(() => setDisplayMode(newMode), 200);

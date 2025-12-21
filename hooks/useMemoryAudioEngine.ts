@@ -13,22 +13,35 @@ export const useMemoryAudioEngine = (
   
   useEffect(() => {
     if (!audioContext) return;
-    
-    const memoryEngine = new MemoryAudioEngine(audioContext, config);
-    memoryEngine.setDiagnosticsCallback(setDiagnostics);
-    memoryEngine.setErrorCallback(setError);
-    
-    memoryEngine.start()
-      .then(() => {
+
+    const startEngine = async () => {
+      try {
+        // Ensure AudioContext is running before starting engine
+        if (audioContext.state === 'suspended') {
+          console.log('useMemoryAudioEngine: Resuming suspended AudioContext');
+          await audioContext.resume();
+        }
+
+        const memoryEngine = new MemoryAudioEngine(audioContext, config);
+        memoryEngine.setDiagnosticsCallback(setDiagnostics);
+        memoryEngine.setErrorCallback(setError);
+
+        await memoryEngine.start();
         setEngine(memoryEngine);
         setIsInitialized(true);
-      })
-      .catch(err => {
-        setError(err.message);
-      });
-    
+        console.log('useMemoryAudioEngine: Memory engine started successfully');
+      } catch (err) {
+        console.error('useMemoryAudioEngine: Failed to start Memory engine:', err);
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
+    };
+
+    startEngine();
+
     return () => {
-      memoryEngine.dispose();
+      if (engine) {
+        engine.dispose();
+      }
     };
   }, [audioContext]);
   
