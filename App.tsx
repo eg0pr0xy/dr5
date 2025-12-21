@@ -61,6 +61,7 @@ const App: React.FC = () => {
   const [infoFlipped, setInfoFlipped] = useState(false);
   const [showResp, setShowResp] = useState(false);
   const [lastColorSwitch, setLastColorSwitch] = useState(0);
+  const [micPermissionStatus, setMicPermissionStatus] = useState<'unknown' | 'granted' | 'denied' | 'requesting'>('unknown');
 
   // Gamification: Cryptic scoring system
   const [score, setScore] = useState(() => {
@@ -240,7 +241,28 @@ const App: React.FC = () => {
 
   const initializeAudio = async () => {
     try {
-      // Create AudioContext if needed
+      // STEP 1: REQUEST MICROPHONE ACCESS FIRST (for mobile compatibility)
+      setMicPermissionStatus('requesting');
+
+      let micStream: MediaStream | null = null;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+        setMicPermissionStatus('granted');
+        console.log('Microphone access granted');
+      } catch (micError) {
+        setMicPermissionStatus('denied');
+        console.warn('Microphone access denied or unavailable:', micError);
+        // Continue with audio initialization even if mic is denied
+        // Memory/ORACLE modes will use fallback audio
+      }
+
+      // STEP 2: Create AudioContext if needed
       if (!audioContextRef.current) {
         const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
         audioContextRef.current = new AudioContextClass();
@@ -253,7 +275,7 @@ const App: React.FC = () => {
 
       const ctx = audioContextRef.current;
 
-      // Handle mobile-specific audio initialization
+      // STEP 3: Handle mobile-specific audio initialization
       if (isMobile) {
         console.log('Mobile audio initialization starting...');
 
@@ -303,7 +325,7 @@ const App: React.FC = () => {
         console.log('Mobile audio initialization complete, context state:', ctx.state);
       }
 
-      // Attempt to resume on user gesture (works on desktop)
+      // STEP 4: Attempt to resume AudioContext
       await ensureResumed('ENTER_THE_ROOM');
 
       // Wait a bit for resume to take effect
@@ -336,7 +358,7 @@ const App: React.FC = () => {
         }
       }
 
-      // CREATE UNIFIED MASTER BUS
+      // STEP 5: CREATE UNIFIED MASTER BUS
       const mainGain = ctx.createGain();
       mainGain.gain.setValueAtTime(0.8, ctx.currentTime);
       mainGain.connect(ctx.destination);
@@ -363,7 +385,7 @@ const App: React.FC = () => {
         }
       };
 
-      // AUDIO PRESENCE MONITOR
+      // STEP 6: AUDIO PRESENCE MONITOR
       const presenceInterval = setInterval(() => {
         if (!masterBusRef.current) return;
 
@@ -395,10 +417,17 @@ const App: React.FC = () => {
         });
       }, 1000); // Check every second
 
+      // Clean up microphone stream if we got it but won't use it immediately
+      if (micStream) {
+        micStream.getTracks().forEach(track => track.stop());
+      }
+
       setIsBooting(true);
       console.log('Audio initialization completed, final context state:', ctx.state);
+      console.log('Microphone permission status:', micPermissionStatus);
     } catch (error) {
       console.error('Audio initialization failed:', error);
+      setMicPermissionStatus('denied');
       // Still proceed to booting state even if audio fails
       // This allows the UI to work even without sound
       setIsBooting(true);
@@ -412,6 +441,12 @@ const App: React.FC = () => {
       await ensureResumed('mode_switch');
       // Additional delay to ensure AudioContext is fully ready
       await new Promise(resolve => setTimeout(resolve, 50));
+    }
+
+    // For MEMORY mode, ensure proper microphone cleanup before switching
+    if (mode === Mode.MEMORY && newMode !== Mode.MEMORY) {
+      // Give time for microphone cleanup to complete
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
 
     setMode(newMode);
@@ -687,6 +722,14 @@ const App: React.FC = () => {
               <div className={`text-[10px] opacity-40 mb-12 uppercase tracking-[0.3em] leading-loose max-w-[240px] ${getMotionClass()}`}>
                 I HAVE NOTHING TO SAY<br/>AND I AM SAYING IT...
               </div>
+
+              {/* Microphone permission status */}
+              {micPermissionStatus !== 'unknown' && (
+                <div className={`text-[9px] mb-4 uppercase tracking-[0.2em] ${micPermissionStatus === 'granted' ? 'opacity-60 text-green-400' : micPermissionStatus === 'requesting' ? 'opacity-60 text-yellow-400' : 'opacity-60 text-red-400'}`}>
+                  MIC_ACCESS: {micPermissionStatus.toUpperCase()}
+                </div>
+              )}
+
               <span
                 onClick={initializeAudio}
                 className="enter-btn text-xs cursor-pointer tracking-[0.4em] uppercase font-bold border border-current px-6 py-4 transition-none"
@@ -694,6 +737,12 @@ const App: React.FC = () => {
               >
                 [ ENTER_THE_ROOM ]
               </span>
+
+              <div className={`text-[8px] opacity-30 mt-4 uppercase tracking-[0.3em] max-w-[280px] leading-relaxed ${getMotionClass()}`}>
+                MICROPHONE USED FOR:<br/>
+                MEMORY MODE ANALYSIS<br/>
+                ORACLE MODE SENSING
+              </div>
             </div>
           ) : isBooting ? (
             renderBootScreen()

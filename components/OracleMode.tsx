@@ -11,9 +11,10 @@ interface OracleModeProps {
   isAnimated?: boolean;
   isMobile?: boolean;
   onScore?: (points: number) => void;
+  onColorInversion?: () => void;
 }
 
-const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated, isMobile, onScore }) => {
+const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated, isMobile, onScore, onColorInversion }) => {
   const [hexagram, setHexagram] = useState<number[]>(new Array(6).fill(0));
   const [rms, setRms] = useState(0);
   const [oracleText, setOracleText] = useState("SILENCE_IS_SOUND");

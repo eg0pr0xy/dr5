@@ -385,27 +385,52 @@ export class MemoryAudioEngine {
         return;
       } catch {}
 
-      // Fallback: ScriptProcessor (legacy)
-      const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-      processor.onaudioprocess = (e) => {
-        const input = e.inputBuffer.getChannelData(0);
+      // Fallback: Modern polling-based approach (no deprecated ScriptProcessorNode)
+      const analyser = this.audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      // Use requestAnimationFrame for efficient audio buffer reading
+      let animationFrameId: number;
+      const pollAudioData = () => {
+        if (!this.nodes.micStream) return; // Stop if mic was disconnected
+
         const bufferSize = this.config.bufferSize!;
-        for (let i = 0; i < input.length; i++) {
-          this.nodes.ringData[this.nodes.bufferPtr] = input[i];
+        const fftSize = analyser.fftSize;
+        const buffer = new Float32Array(fftSize);
+
+        // Get time domain data
+        analyser.getFloatTimeDomainData(buffer);
+
+        // Process audio data (take a smaller chunk to avoid overwhelming the ring buffer)
+        const chunkSize = Math.min(1024, buffer.length);
+        for (let i = 0; i < chunkSize; i++) {
+          this.nodes.ringData[this.nodes.bufferPtr] = buffer[i];
           this.nodes.bufferPtr = (this.nodes.bufferPtr + 1) % bufferSize;
           if (this.nodes.capturedSamples < bufferSize) this.nodes.capturedSamples++;
         }
+
+        // Calculate RMS from the chunk
         let sum = 0;
-        for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
-        this.ambientRms = Math.sqrt(sum / input.length);
+        for (let i = 0; i < chunkSize; i++) {
+          sum += buffer[i] * buffer[i];
+        }
+        this.ambientRms = Math.sqrt(sum / chunkSize);
+
+        // Continue polling
+        animationFrameId = requestAnimationFrame(pollAudioData);
       };
-      source.connect(processor);
-      // Remove mic from speakers - analysis only
-      // const nullGain = this.audioContext.createGain();
-      // nullGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-      // processor.connect(nullGain);
-      // nullGain.connect(this.audioContext.destination);
-      this.nodes.processor = processor;
+
+      // Start polling
+      animationFrameId = requestAnimationFrame(pollAudioData);
+
+      // Store analyser and animation frame ID for cleanup
+      this.nodes.processor = {
+        disconnect: () => {
+          cancelAnimationFrame(animationFrameId);
+          analyser.disconnect();
+        }
+      } as any; // Type as ScriptProcessorNode for compatibility
     } catch (err) {
       this.startInternalMemoryFallback();
       this.onError?.('MIC_UNAVAILABLE_FALLBACK_NOISE');
