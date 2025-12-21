@@ -104,8 +104,8 @@ const InfoPage: React.FC<InfoPageProps> = ({
             <div className={`space-y-6 animate-[fade_0.5s_ease-in] ${motionClass}`}>
               {/* Welcome */}
               <div className="text-center">
-                <div className="text-sm opacity-80 mb-2">WELCOME TO DR5 SYSTEM TERMINAL</div>
-                <div className="text-[11px] opacity-60">REV: DR-5.CAGE_EDITION</div>
+                <div className="text-sm opacity-80 mb-2">DR5 BY STUDIO NEUE EPISTEME</div>
+                <div className="text-[11px] opacity-60">REV: DR-5.WEB AUDIO SCULPTURE</div>
               </div>
 
               {/* Core Specifications */}

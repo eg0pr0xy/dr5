@@ -10,8 +10,8 @@ interface RadioSource {
 
 const RADIO_SOURCES: RadioSource[] = [
   {
-    name: 'BBC Radio 3',
-    url: 'https://stream.live.vc.bbcmedia.co.uk/bbc_radio_three',
+    name: 'DLF',
+    url: 'https://st01.sslstream.dlf.de/dlf/01/high/opus/stream.opus?aggregator=web',
     fallback: 'SHORTWAVE_EMU'
   }
 ];
@@ -103,8 +103,8 @@ export class KHSAudioEngine {
     try {
       this.radio.state = 'LOADING';
 
-      // Try BBC Radio 3 first (classical music fits Stockhausen aesthetic)
-      const radioUrl = 'https://stream.live.vc.bbcmedia.co.uk/bbc_radio_three';
+      // Try DLF first (German public radio fits Stockhausen aesthetic)
+      const radioUrl = 'https://st01.sslstream.dlf.de/dlf/01/high/opus/stream.opus?aggregator=web';
       const el = new Audio(radioUrl);
       el.crossOrigin = 'anonymous';
       el.preload = 'none'; // Don't preload to avoid unnecessary network requests
