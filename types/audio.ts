@@ -11,6 +11,7 @@ export interface AudioEngineNodes {
   micStream: MediaStream | null;
   processor: ScriptProcessorNode | null;
   workletNode?: AudioWorkletNode | null;
+   internalWriter?: number | null;
   ringBuffer: AudioBuffer;
   ringData: Float32Array;
   bufferPtr: number;
@@ -62,6 +63,8 @@ export interface KHSState {
   shapeF: number;
   shapeQ: number;
   spectralDensity: number[];
+  formType?: 'punktuell' | 'gruppen' | 'statistisch';
+  transformationType?: 'rotation' | 'inversion' | 'multiplication' | 'division';
 }
 
 export interface MemoryModeProps {

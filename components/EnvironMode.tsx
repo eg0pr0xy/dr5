@@ -4,9 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 interface EnvironModeProps {
   audioContext: AudioContext;
   isAnimated?: boolean;
+  isMobile?: boolean;
 }
 
-const EnvironMode: React.FC<EnvironModeProps> = ({ audioContext, isAnimated }) => {
+const EnvironMode: React.FC<EnvironModeProps> = ({ audioContext, isAnimated, isMobile }) => {
   const [matrix, setMatrix] = useState<string[][]>([]);
   const [density, setDensity] = useState(false);
   const [windActive, setWindActive] = useState(true);
@@ -142,9 +143,10 @@ const EnvironMode: React.FC<EnvironModeProps> = ({ audioContext, isAnimated }) =
         mainGain.gain.setTargetAtTime(0.4 + (globalDensity * 0.6), time, 0.1);
       }
     };
-    const interval = setInterval(updateMatrix, 150); 
+    const updateDelay = isMobile ? 250 : 150;
+    const interval = setInterval(updateMatrix, updateDelay);
     return () => clearInterval(interval);
-  }, [density, windActive, audioContext]);
+  }, [density, windActive, audioContext, isMobile]);
 
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
 

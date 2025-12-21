@@ -7,6 +7,7 @@ export class MemoryAudioEngine {
   private ambientRms: number = 0;
   private currentStep: number = 0;
   private currentF0: number = 110;
+  private lastGhostAt: string = '--:--:--';
   
   // Event callbacks
   private onDiagnosticsUpdate?: (diagnostics: MemoryDiagnostics) => void;
@@ -120,6 +121,8 @@ export class MemoryAudioEngine {
     return {
       micStream: null,
       processor: null,
+      workletNode: null,
+      internalWriter: null,
       ringBuffer,
       ringData,
       bufferPtr: 0,
@@ -142,42 +145,130 @@ export class MemoryAudioEngine {
   }
   
   private startAudioSources(): void {
-    // Create and start noise sources
-    const noiseBuffer = this.audioContext.createBuffer(1, this.audioContext.sampleRate * 2, this.audioContext.sampleRate);
-    const noiseData = noiseBuffer.getChannelData(0);
-    for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
-    
-    const dustBuffer = this.audioContext.createBuffer(1, this.audioContext.sampleRate * 4, this.audioContext.sampleRate);
-    const dustData = dustBuffer.getChannelData(0);
-    for (let i = 0; i < dustData.length; i++) if (Math.random() > 0.9997) dustData[i] = (Math.random()*2-1)*0.4;
-    
-    const noiseSource = this.audioContext.createBufferSource();
-    noiseSource.buffer = noiseBuffer;
-    noiseSource.loop = true;
-    
-    const dustSource = this.audioContext.createBufferSource();
-    dustSource.buffer = dustBuffer;
-    dustSource.loop = true;
-    
-    // Create static filter
-    const staticFilter = this.audioContext.createBiquadFilter();
-    staticFilter.type = 'highpass';
-    staticFilter.frequency.setValueAtTime(4500, this.audioContext.currentTime);
-    
-    // Connect noise sources
-    noiseSource.connect(this.nodes.droneFilter);
-    this.nodes.droneFilter.connect(this.nodes.droneGain);
-    this.nodes.droneGain.connect(this.nodes.mainGain);
-    
-    noiseSource.connect(staticFilter);
-    staticFilter.connect(this.nodes.staticGain);
-    this.nodes.staticGain.connect(this.nodes.mainGain);
-    
-    dustSource.connect(this.nodes.dustGain);
-    this.nodes.dustGain.connect(this.nodes.mainGain);
-    
-    noiseSource.start();
-    dustSource.start();
+    // Create evolving spectral textures instead of static noise
+    this.createPreparedSoundscapes();
+
+    // Create harmonic resonators for "prepared" sound sources
+    this.createHarmonicResonators();
+
+    // Create evolving ambient drone
+    this.createAmbientDrone();
+  }
+
+  private createPreparedSoundscapes(): void {
+    // Create multiple prepared sound sources with different characteristics
+    const soundscapes = [
+      { type: 'tuned_objects', baseFreq: 220, harmonics: [1, 2.1, 3.2, 4.3] },
+      { type: 'bowed_strings', baseFreq: 146, harmonics: [1, 2.3, 3.7, 5.1] },
+      { type: 'tuned_wind', baseFreq: 330, harmonics: [1, 1.5, 2.25, 3.375] },
+      { type: 'vocal_resonance', baseFreq: 196, harmonics: [1, 2.7, 4.9, 7.3] }
+    ];
+
+    soundscapes.forEach((scape, index) => {
+      const bufferSize = this.audioContext.sampleRate * 3; // 3 seconds
+      const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
+      const data = buffer.getChannelData(0);
+
+      // Generate evolving harmonic textures
+      let phase = 0;
+      let modulationPhase = 0;
+
+      for (let i = 0; i < bufferSize; i++) {
+        const time = i / this.audioContext.sampleRate;
+        let sample = 0;
+
+        // Add harmonics with evolving amplitudes
+        scape.harmonics.forEach((harmonic, hIndex) => {
+          const freq = scape.baseFreq * harmonic;
+          const amp = 0.3 / (hIndex + 1); // Fundamental loudest
+
+          // Add slow amplitude modulation
+          const modFreq = 0.1 + (hIndex * 0.05);
+          const modulation = 0.5 + 0.3 * Math.sin(2 * Math.PI * modFreq * time);
+
+          sample += amp * modulation * Math.sin(2 * Math.PI * freq * time + phase);
+        });
+
+        // Add subtle noise for texture
+        sample += (Math.random() * 2 - 1) * 0.02;
+
+        // Apply gentle envelope
+        const envelope = Math.min(time * 0.5, 1) * Math.min((bufferSize - i) / (bufferSize * 0.3), 1);
+        sample *= envelope;
+
+        data[i] = Math.max(-1, Math.min(1, sample * 0.1)); // Prevent clipping
+
+        phase += 0.001; // Very slow phase evolution
+      }
+
+      const source = this.audioContext.createBufferSource();
+      source.buffer = buffer;
+      source.loop = true;
+
+      const gain = this.audioContext.createGain();
+      gain.gain.setValueAtTime(0.05 + (index * 0.02), this.audioContext.currentTime);
+
+      const filter = this.audioContext.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(scape.baseFreq, this.audioContext.currentTime);
+      filter.Q.setValueAtTime(8, this.audioContext.currentTime);
+
+      source.connect(gain);
+      gain.connect(filter);
+      filter.connect(this.nodes.mainGain);
+
+      source.start();
+    });
+  }
+
+  private createHarmonicResonators(): void {
+    // Create "prepared" resonant objects that respond to mic input
+    const resonators = [220, 330, 440, 550, 660, 880]; // Harmonic series
+
+    resonators.forEach((freq, index) => {
+      const resonator = this.audioContext.createBiquadFilter();
+      resonator.type = 'bandpass';
+      resonator.frequency.setValueAtTime(freq, this.audioContext.currentTime);
+      resonator.Q.setValueAtTime(15 + (index * 2), this.audioContext.currentTime);
+
+      const gain = this.audioContext.createGain();
+      gain.gain.setValueAtTime(0.8, this.audioContext.currentTime);
+
+      // Connect to grains output for resonance
+      this.nodes.grainsGain.connect(resonator);
+      resonator.connect(gain);
+      gain.connect(this.nodes.mainGain);
+    });
+  }
+
+  private createAmbientDrone(): void {
+    // Create slowly evolving ambient drone
+    const droneFreqs = [55, 82.5, 110, 165]; // Subharmonic series
+
+    droneFreqs.forEach((freq, index) => {
+      const osc = this.audioContext.createOscillator();
+      osc.type = index % 2 === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(freq, this.audioContext.currentTime);
+
+      const gain = this.audioContext.createGain();
+      gain.gain.setValueAtTime(0.08, this.audioContext.currentTime); // Increased volume
+
+      // Add slow LFO modulation
+      const lfo = this.audioContext.createOscillator();
+      lfo.frequency.setValueAtTime(0.02 + (index * 0.01), this.audioContext.currentTime);
+
+      const lfoGain = this.audioContext.createGain();
+      lfoGain.gain.setValueAtTime(freq * 0.1, this.audioContext.currentTime);
+
+      lfo.connect(lfoGain);
+      lfoGain.connect(osc.frequency);
+
+      osc.connect(gain);
+      gain.connect(this.nodes.mainGain);
+
+      osc.start();
+      lfo.start();
+    });
   }
   
   async start(): Promise<void> {
@@ -195,67 +286,89 @@ export class MemoryAudioEngine {
   }
   
   private async startMicrophone(): Promise<void> {
-    const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    this.nodes.micStream = micStream;
-
-    const source = this.audioContext.createMediaStreamSource(micStream);
-
-    // Prefer AudioWorklet for low-latency capture
-    const base = (import.meta as any).env?.BASE_URL || '/';
+    let micStream: MediaStream | null = null;
     try {
-      // Register worklet and create node
-      await this.audioContext.audioWorklet.addModule(`${base}worklets/memory-capture-processor.js`);
-      const worklet = new (window as any).AudioWorkletNode(this.audioContext, 'memory-capture-processor', {
-        numberOfInputs: 1,
-        numberOfOutputs: 0,
-        outputChannelCount: [0],
-        channelCount: 1,
-      });
-      worklet.port.onmessage = (e: MessageEvent) => {
-        const msg: any = e.data;
-        if (!msg || msg.t !== 'chunk') return;
-        const input: Float32Array = msg.data;
+      micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.nodes.micStream = micStream;
+      const source = this.audioContext.createMediaStreamSource(micStream);
+
+      // Prefer AudioWorklet for low-latency capture
+      const base = (import.meta as any).env?.BASE_URL || '/';
+      try {
+        await this.audioContext.audioWorklet.addModule(`${base}worklets/memory-capture-processor.js`);
+        const worklet = new (window as any).AudioWorkletNode(this.audioContext, 'memory-capture-processor', {
+          numberOfInputs: 1,
+          numberOfOutputs: 0,
+          outputChannelCount: [0],
+          channelCount: 1,
+        });
+        worklet.port.onmessage = (e: MessageEvent) => {
+          const msg: any = e.data;
+          if (!msg || msg.t !== 'chunk') return;
+          const input: Float32Array = msg.data;
+          const bufferSize = this.config.bufferSize!;
+          for (let i = 0; i < input.length; i++) {
+            this.nodes.ringData[this.nodes.bufferPtr] = input[i];
+            this.nodes.bufferPtr = (this.nodes.bufferPtr + 1) % bufferSize;
+            if (this.nodes.capturedSamples < bufferSize) this.nodes.capturedSamples++;
+          }
+          if (typeof msg.rms === 'number') this.ambientRms = msg.rms;
+        };
+        source.connect(worklet);
+        // Remove mic from speakers - analysis only
+        // const nullGain = this.audioContext.createGain();
+        // nullGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+        // worklet.connect(nullGain);
+        // nullGain.connect(this.audioContext.destination);
+        this.nodes.workletNode = worklet;
+        this.nodes.processor = null;
+        return;
+      } catch {}
+
+      // Fallback: ScriptProcessor (legacy)
+      const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
+      processor.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
         const bufferSize = this.config.bufferSize!;
-        // write to ring
         for (let i = 0; i < input.length; i++) {
           this.nodes.ringData[this.nodes.bufferPtr] = input[i];
           this.nodes.bufferPtr = (this.nodes.bufferPtr + 1) % bufferSize;
           if (this.nodes.capturedSamples < bufferSize) this.nodes.capturedSamples++;
         }
-        // update RMS from processor
-        if (typeof msg.rms === 'number') this.ambientRms = msg.rms;
+        let sum = 0;
+        for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
+        this.ambientRms = Math.sqrt(sum / input.length);
       };
-      source.connect(worklet);
-      this.nodes.workletNode = worklet;
-      this.nodes.processor = null;
-      return;
-    } catch {}
+      source.connect(processor);
+      // Remove mic from speakers - analysis only
+      // const nullGain = this.audioContext.createGain();
+      // nullGain.gain.setValueAtTime(0, this.audioContext.currentTime);
+      // processor.connect(nullGain);
+      // nullGain.connect(this.audioContext.destination);
+      this.nodes.processor = processor;
+    } catch (err) {
+      this.startInternalMemoryFallback();
+      this.onError?.('MIC_UNAVAILABLE_FALLBACK_NOISE');
+    }
+  }
 
-    // Fallback: ScriptProcessor (legacy)
-    const processor = this.audioContext.createScriptProcessor(4096, 1, 1);
-    processor.onaudioprocess = (e) => {
-      const input = e.inputBuffer.getChannelData(0);
-      const bufferSize = this.config.bufferSize!;
-
-      for (let i = 0; i < input.length; i++) {
-        this.nodes.ringData[this.nodes.bufferPtr] = input[i];
+  private startInternalMemoryFallback(): void {
+    if (this.nodes.internalWriter) return;
+    const bufferSize = this.config.bufferSize!;
+    let lastOut = 0;
+    this.nodes.internalWriter = window.setInterval(() => {
+      for (let i = 0; i < 2048; i++) {
+        const white = Math.random() * 2 - 1;
+        const val = (lastOut + 0.01 * white) / 1.01;
+        lastOut = val;
+        this.nodes.ringData[this.nodes.bufferPtr] = val * 0.6;
         this.nodes.bufferPtr = (this.nodes.bufferPtr + 1) % bufferSize;
         if (this.nodes.capturedSamples < bufferSize) this.nodes.capturedSamples++;
       }
-
-      let sum = 0;
-      for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
-      this.ambientRms = Math.sqrt(sum / input.length);
-    };
-    source.connect(processor);
-    // do NOT route processor to destination to avoid echo; connect to a dummy gain if needed
-    const nullGain = this.audioContext.createGain();
-    nullGain.gain.setValueAtTime(0, this.audioContext.currentTime);
-    processor.connect(nullGain);
-    nullGain.connect(this.audioContext.destination);
-    this.nodes.processor = processor;
+      this.ambientRms = 0.08;
+    }, 120) as unknown as number;
   }
-  
+
   private startGrainScheduler(): void {
     const scheduleGrain = (when: number) => {
       const ctx = this.audioContext;
@@ -340,21 +453,21 @@ export class MemoryAudioEngine {
     
     const scheduleGhost = () => {
       const now = this.audioContext.currentTime;
-      const dur = 0.6 + Math.random() * 0.9;
+      const dur = 1.5 + Math.random() * 2.0;
       this.nodes.scheduler.ghostUntil = now + dur;
-      
-      if (this.onDiagnosticsUpdate) {
-        const currentDiag = this.getDiagnostics();
-        this.onDiagnosticsUpdate({
-          ...currentDiag,
-          lastGhost: formatTimeHMS(Date.now())
-        });
-      }
-      
-      this.ghostId = window.setTimeout(scheduleGhost, 8000 + Math.random() * 12000) as unknown as number;
+      this.lastGhostAt = formatTimeHMS(Date.now());
+
+      this.onDiagnosticsUpdate?.({
+        ...this.getDiagnostics(),
+        lastGhost: this.lastGhostAt
+      });
+
+      // Schedule next ghost: 5-15 minutes (300000-900000ms)
+      this.ghostId = window.setTimeout(scheduleGhost, 300000 + Math.random() * 600000) as unknown as number;
     };
-    
-    this.ghostId = window.setTimeout(scheduleGhost, 5000 + Math.random() * 8000) as unknown as number;
+
+    // Initial ghost: 5-10 minutes
+    this.ghostId = window.setTimeout(scheduleGhost, 300000 + Math.random() * 300000) as unknown as number;
   }
   
   private startDiagnosticsUpdater(): void {
@@ -369,7 +482,7 @@ export class MemoryAudioEngine {
         bufFill,
         grainRate,
         rms,
-        lastGhost: '--:--:--',
+        lastGhost: this.lastGhostAt,
         currentStep: this.currentStep,
         cutoff: this.FREQ_STEPS[this.currentStep],
         q: this.Q_STEPS[this.currentStep],
@@ -382,28 +495,29 @@ export class MemoryAudioEngine {
   
   private startParameterSequencer(): void {
     let lastStepTime = 0;
-    
+
     const scheduleNextEvent = () => {
       const time = this.audioContext.currentTime;
-      if (time - lastStepTime > 1.5) {
+      if (time - lastStepTime > 60) { // Changed from 6 to 60 seconds
         lastStepTime = time;
         this.currentStep = (this.currentStep + 1) % this.FREQ_STEPS.length;
-        
+
         this.nodes.droneFilter.frequency.setTargetAtTime(
-          this.FREQ_STEPS[this.currentStep], 
-          time, 
-          0.02
+          this.FREQ_STEPS[this.currentStep],
+          time,
+          1.0 // Slower ramp
         );
         this.nodes.droneFilter.Q.setTargetAtTime(
-          this.Q_STEPS[this.currentStep], 
-          time, 
-          0.02
+          this.Q_STEPS[this.currentStep],
+          time,
+          1.0 // Slower ramp
         );
       }
-      
-      this.stepTimeoutId = window.setTimeout(scheduleNextEvent, 400 + Math.random() * 2000) as unknown as number;
+
+      // Schedule next: 60-300 seconds (60000-300000ms)
+      this.stepTimeoutId = window.setTimeout(scheduleNextEvent, 60000 + Math.random() * 240000) as unknown as number;
     };
-    
+
     scheduleNextEvent();
   }
   
@@ -454,7 +568,7 @@ export class MemoryAudioEngine {
       bufFill: Math.round(fill * 100),
       grainRate: Math.round(this.nodes.scheduler.targetRate),
       rms: Number(this.ambientRms.toFixed(3)),
-      lastGhost: '--:--:--',
+      lastGhost: this.lastGhostAt,
       currentStep: this.currentStep,
       cutoff: this.FREQ_STEPS[this.currentStep],
       q: this.Q_STEPS[this.currentStep],
@@ -476,6 +590,7 @@ export class MemoryAudioEngine {
     if (this.diagIvId) window.clearInterval(this.diagIvId);
     if (this.ghostId) window.clearTimeout(this.ghostId);
     if (this.stepTimeoutId) window.clearTimeout(this.stepTimeoutId);
+    if (this.nodes.internalWriter) window.clearInterval(this.nodes.internalWriter);
     
     // Stop microphone
     if (this.nodes.micStream) {

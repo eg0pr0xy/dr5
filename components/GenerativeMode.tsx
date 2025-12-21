@@ -4,9 +4,10 @@ import React, { useState, useEffect, useRef } from 'react';
 interface GenerativeModeProps {
   audioContext: AudioContext;
   isAnimated?: boolean;
+  isMobile?: boolean;
 }
 
-const GenerativeMode: React.FC<GenerativeModeProps> = ({ audioContext, isAnimated }) => {
+const GenerativeMode: React.FC<GenerativeModeProps> = ({ audioContext, isAnimated, isMobile }) => {
   const [grid, setGrid] = useState<number[][]>([]);
   const [influence, setInfluence] = useState<boolean[]>(new Array(8).fill(false));
   const [rule30, setRule30] = useState(false);
@@ -19,7 +20,7 @@ const GenerativeMode: React.FC<GenerativeModeProps> = ({ audioContext, isAnimate
   const BAND_CHAR_SETS = [["·", "░", "▒", "▓", "█"], ["·", "o", "0", "O", "@"], ["·", "-", "=", "+", "#"], ["·", "i", "l", "I", "H"], ["·", ".", ":", ";", "!"], ["·", "'", "^", "*", "†"], ["·", "░", "▒", "▓", "█"]];
 
   const engineRef = useRef<{
-    oscillators: OscillatorNode[]; gains: GainNode[]; analysers: AnalyserNode[]; filter: BiquadFilterNode; feedbackGain: GainNode; envOsc: OscillatorNode; envLfoFreq: OscillatorNode; envLfoAmp: OscillatorNode;
+    oscillators: OscillatorNode[]; gains: GainNode[]; analysers: AnalyserNode[]; filter: BiquadFilterNode; feedbackGain: GainNode; envOsc: OscillatorNode; envLfoFreq: OscillatorNode; envLfoAmp: GainNode;
   } | null>(null);
 
   useEffect(() => {
@@ -60,6 +61,7 @@ const GenerativeMode: React.FC<GenerativeModeProps> = ({ audioContext, isAnimate
 
   useEffect(() => {
     const ruleSet = (rule30 ? 30 : 110).toString(2).padStart(8, '0').split('').reverse().map(Number);
+    const updateDelay = isMobile ? 250 : 150;
     const interval = setInterval(() => {
       setGrid(prev => {
         const lastRow = prev.length ? prev[prev.length - 1] : new Array(cols).fill(0).map((_, i) => i === Math.floor(cols/2) ? 1 : 0);
@@ -71,9 +73,9 @@ const GenerativeMode: React.FC<GenerativeModeProps> = ({ audioContext, isAnimate
         }
         return prev.length >= rows ? [...prev.slice(1), nextRow] : [...prev, nextRow];
       });
-    }, 150);
+    }, updateDelay);
     return () => clearInterval(interval);
-  }, [influence, rule30, invert]);
+  }, [influence, rule30, invert, isMobile]);
 
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
 

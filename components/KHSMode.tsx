@@ -6,7 +6,6 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
   const { diag, radioActive, setRadioActive } = useKHSAudio(audioContext);
   const [activePermIndex, setActivePermIndex] = useState(0);
   const [matrixTick, setMatrixTick] = useState(0);
-  const animationFrameRef = useRef<number | null>(null);
   const serialMatrix = useRef<number[][]>(
     Array.from({ length: 14 }, () => Array.from({ length: 14 }, () => Math.random() > 0.5 ? 1 : 0))
   );
@@ -33,12 +32,6 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
       }
       setMatrixTick((v) => (v + 1) % 1000);
     };
-
-    // Use requestAnimationFrame for smoother mobile performance
-    const updateMatrix = () => {
-      animate();
-      animationFrameRef.current = requestAnimationFrame(updateMatrix);
-    };
     
     // Slower update rate on mobile to save battery
     const updateDelay = isMobile ? 180 : 120;
@@ -48,9 +41,6 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
 
     return () => {
       clearInterval(id);
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
     };
   }, [diag.momentId, matrixTick, isMobile]);
 
@@ -66,7 +56,7 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
         </div>
       </header>
       <div className={`text-[9px] opacity-60 uppercase tracking-[0.2em] mb-2 tabular-nums ${motionClass}`}>
-        KHS_DIAG: [ MOM:{diag.momentId} ] [ FADE:{diag.fadePct}% ] [ PARTIALS:{diag.active} ] [ CENTROID:{Math.round(diag.centroid)}HZ ] [ NEXT_SHIFT:{diag.nextShift}s ]
+        STOCKHAUSEN_DIAG: [ MOMENT:{diag.momentId} ] [ FORM:{diag.formType || 'UNK'} ] [ TRANS:{diag.transformationType || 'UNK'} ] [ ACTIVE:{diag.active} ] [ SHIFT:{diag.nextShift}s ]
       </div>
       <div className={`flex-1 w-full h-full border border-current border-opacity-10 bg-black/5 flex flex-col p-2 ${motionClass}`}>
         <div className="flex-1 w-full h-full grid grid-cols-14 gap-1 opacity-60">

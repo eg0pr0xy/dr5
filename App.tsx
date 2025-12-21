@@ -10,6 +10,7 @@ import KHSMode from './components/KHSMode';
 
 import Panel from './components/Panel';
 import DevResponsiveTester from './components/DevResponsiveTester';
+import InfoPage from './components/InfoPage';
 
 const BOOT_LOGS = [
   "> INIT INSTRUMENT_DR5_BIOS...",
@@ -59,6 +60,48 @@ const App: React.FC = () => {
   const [showInfo, setShowInfo] = useState(false);
   const [infoFlipped, setInfoFlipped] = useState(false);
   const [showResp, setShowResp] = useState(false);
+
+  // Gamification: Cryptic scoring system
+  const [score, setScore] = useState(() => {
+    const saved = localStorage.getItem('dr5_score');
+    return saved ? parseInt(saved, 10) : 0;
+  });
+
+  // Persist score to localStorage
+  useEffect(() => {
+    localStorage.setItem('dr5_score', score.toString());
+  }, [score]);
+
+  // Scoring function with sound effects
+  const addScore = (points: number, context: string = 'interaction') => {
+    setScore(prev => prev + points);
+
+    // Play scoring sound effect
+    if (audioContextRef.current && isAudioStarted) {
+      const ctx = audioContextRef.current;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      // Different tones for different point values
+      const baseFreq = 440 + (points * 110); // Higher points = higher pitch
+      osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(baseFreq * 2, ctx.currentTime + 0.1);
+
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.1);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.1);
+    }
+  };
+
+  // Cryptic score display (hex format)
+  const getCrypticScore = () => {
+    return `SCORE: 0x${score.toString(16).toUpperCase().padStart(3, '0')}`;
+  };
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastInteractRef = useRef<number>(Date.now());
@@ -258,21 +301,24 @@ const App: React.FC = () => {
     if (!isAudioStarted) return;
     const accidentChars = ["*", "?", "!", "X", "§", "¶", "†", "‡"];
     const spawnAccident = () => {
-      if (Math.random() > 0.7) {
-        setAccidents(prev => [...prev, {
-          x: Math.floor(Math.random() * 100),
-          y: Math.floor(Math.random() * 100),
-          char: accidentChars[Math.floor(Math.random() * accidentChars.length)],
-          life: 5 + Math.random() * 10
-        }]);
+      if (Math.random() > 0.8) { // Reduced spawn rate
+        setAccidents(prev => {
+          const newAccidents = [...prev, {
+            x: Math.floor(Math.random() * 100),
+            y: Math.floor(Math.random() * 100),
+            char: accidentChars[Math.floor(Math.random() * accidentChars.length)],
+            life: 3 + Math.random() * 5 // Shorter life
+          }];
+          return newAccidents.slice(-15); // Limit to 15 accidents max
+        });
       }
-      const delay = isMobile ? 1000 + Math.random() * 4000 : 500 + Math.random() * 3000; // Slower on mobile
+      const delay = isMobile ? 2000 + Math.random() * 6000 : 1000 + Math.random() * 5000; // Slower spawn
       setTimeout(spawnAccident, delay);
     };
     spawnAccident();
     const decayInterval = setInterval(() => {
       setAccidents(prev => prev.map(a => ({ ...a, life: a.life - 1 })).filter(a => a.life > 0));
-    }, 1000);
+    }, 1500); // Slower decay
     return () => { clearInterval(decayInterval); };
   }, [isAudioStarted, isMobile]);
 
@@ -302,13 +348,24 @@ const App: React.FC = () => {
     const onVisibility = () => {
       const vs = document.visibilityState as 'visible' | 'hidden';
       setPageVisibility(vs);
-      if (vs === 'visible') ensureResumed('visibilitychange');
+      if (vs === 'visible') {
+        // Brief delay to ensure page is fully visible
+        setTimeout(() => ensureResumed('visibilitychange'), 100);
+      } else if (vs === 'hidden') {
+        // Optional: could suspend on hide to save battery, but keep running for now
+      }
     };
     const onPageShow = () => ensureResumed('pageshow');
     const onFocus = () => ensureResumed('focus');
     const onTouchEnd = () => ensureResumed('touchend');
     const onPointerDown = () => ensureResumed('pointerdown');
     const onClick = () => ensureResumed('click');
+
+    // Enhanced AudioContext state monitoring
+    const onStateChange = () => {
+      if (ctx) setAudioState((ctx as any).state || 'unknown');
+    };
+    if (ctx) ctx.onstatechange = onStateChange;
 
     document.addEventListener('visibilitychange', onVisibility);
     window.addEventListener('pageshow', onPageShow);
@@ -328,6 +385,7 @@ const App: React.FC = () => {
       window.removeEventListener('touchend', onTouchEnd as any);
       window.removeEventListener('pointerdown', onPointerDown as any);
       window.removeEventListener('click', onClick as any);
+      if (ctx) ctx.onstatechange = null;
       clearInterval(poll);
     };
   }, [isAudioStarted]);
@@ -374,7 +432,7 @@ const App: React.FC = () => {
       case Mode.GENERATIVE:
         return <GenerativeMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       case Mode.ORACLE:
-        return <OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
+        return <OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} onScore={addScore} />;
       case Mode.KHS:
         return <KHSMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       default:
@@ -397,13 +455,7 @@ const App: React.FC = () => {
         ))}
       </div>
 
-      <div 
-        className="absolute inset-0 pointer-events-none breath-grid" 
-        style={{ 
-          backgroundImage: `linear-gradient(${colors.grid} 1px, transparent 1px), linear-gradient(90deg, ${colors.grid} 1px, transparent 1px)`, 
-          backgroundSize: '20px 20px' 
-        }} 
-      />
+
 
       <StatusBar theme={theme} />
 
@@ -411,6 +463,7 @@ const App: React.FC = () => {
         <header className={`mb-6 flex flex-col gap-1 shrink-0 ${getMotionClass()}`}>
           <div className="flex justify-between items-baseline text-[9px] opacity-40 uppercase tracking-[0.2em]">
             <span>ENGINE: {isAudioStarted ? (isZenMode ? '4_33_OBSERVATION' : RILKE_FRAGMENTS[rilkeIndex]) : (isBooting ? 'SYNC_ACTIVE' : 'NO_CARRIER')}</span>
+            <span className="text-[8px] opacity-60 tabular-nums">{getCrypticScore()}</span>
             <span>REV: DR-5.CAGE_EDITION</span>
           </div>
           <div className="flex justify-between items-end border-b border-current border-opacity-40 pb-2">
@@ -503,32 +556,12 @@ const App: React.FC = () => {
       </main>
 
       {showInfo && (
-        <div className="absolute inset-0 z-[200] flex items-center justify-center bg-current bg-opacity-[0.06]" onClick={closeInfo}>
-          <div className="info-card border border-current p-0 m-0" onClick={e => e.stopPropagation()} style={{ perspective: '1200px' }}>
-            <div className={`card-inner ${infoFlipped ? 'flipped' : ''}`} style={{ transformStyle: 'preserve-3d', transition: 'transform 0.6s steps(6, end)' }}>
-              <div className="card-face front border border-current bg-transparent" style={{ backfaceVisibility: 'hidden', padding: '12px', width: '320px', height: '200px' }}>
-                <div className="h-full w-full flex flex-col justify-between">
-                  <div className="text-[11px] uppercase tracking-[0.3em] opacity-60">INFORMATION_CARD</div>
-                  <div className="text-[10px] uppercase opacity-80">[ TAP_TO_FLIP ]</div>
-                </div>
-              </div>
-              <div className="card-face back border border-current bg-transparent" style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)', position: 'absolute', inset: 0, padding: '12px' }}>
-                <div className="h-full w-full flex flex-col justify-between">
-                  <div className="text-[12px] font-bold uppercase">NEUE_EPISTEME_STUDIO</div>
-                  <div className="text-[10px] leading-relaxed opacity-80">
-                    DR5 IS A TERMINAL_INSTRUMENT FOR LISTENING.<br/>
-                    BUILT WITH WEB_AUDIO + ASCII_GRID.<br/>
-                    NO_ICONS NO_ROUNDED_CORNERS NO_COMPROMISES.<br/>
-                    MOMENTS EMERGE BY CHANCE AND CAREFUL TUNING.
-                  </div>
-                  <div className="text-[10px] opacity-70">
-                    [ CLOSE ] — TOUCH ANYWHERE
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <InfoPage
+          onClose={closeInfo}
+          isAnimated={isAnimatedUI}
+          isMobile={isMobile}
+          colors={colors}
+        />
       )}
       {import.meta.env.DEV && debugOverlay && (
         <div className="absolute top-12 right-4 z-[300] text-[10px] p-3 border border-current bg-black bg-opacity-70 max-w-[260px] space-y-1">

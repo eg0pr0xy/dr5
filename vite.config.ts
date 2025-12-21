@@ -4,7 +4,8 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
-    const base = env.VITE_BASE || '/';
+    // Default to '/dr5/' for GitHub Pages deployment
+    const base = env.VITE_BASE || (mode === 'production' ? '/dr5/' : '/');
     const port = Number(env.VITE_PORT || 5173);
     return {
       base,

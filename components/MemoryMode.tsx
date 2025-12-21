@@ -9,7 +9,22 @@ import MemoryFooter from './MemoryFooter';
 
 const MemoryMode: React.FC<MemoryModeProps> = ({ audioContext, isAnimated, embedded, isMobile = false }) => {
   const { engine, diagnostics, isInitialized, error } = useMemoryAudioEngine(audioContext);
-  const fragments = useMemoryFragments();
+
+  // Extract audio parameters for synchronized text generation
+  const audioParams = diagnostics ? {
+    spectralCentroid: 50, // We don't have direct spectral centroid, use approximation
+    rms: diagnostics.rms,
+    grainRate: diagnostics.grainRate,
+    currentF0: diagnostics.f0
+  } : {
+    // Provide fallback values when diagnostics aren't available yet
+    spectralCentroid: 50,
+    rms: 0.05,
+    grainRate: 8,
+    currentF0: 110
+  };
+
+  const fragments = useMemoryFragments(audioParams);
   const touchField = useTouchField(engine);
   
   const motionClass = isAnimated ? 'animate-ui-motion' : '';

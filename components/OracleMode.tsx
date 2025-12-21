@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 
 interface Mushroom {
@@ -10,9 +9,11 @@ interface Mushroom {
 interface OracleModeProps {
   audioContext: AudioContext;
   isAnimated?: boolean;
+  isMobile?: boolean;
+  onScore?: (points: number) => void;
 }
 
-const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated }) => {
+const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated, isMobile, onScore }) => {
   const [hexagram, setHexagram] = useState<number[]>(new Array(6).fill(0));
   const [rms, setRms] = useState(0);
   const [oracleText, setOracleText] = useState("SILENCE_IS_SOUND");
@@ -26,24 +27,47 @@ const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated }) => 
   const engineRef = useRef<{ micStream: MediaStream | null; analyser: AnalyserNode; mainGain: GainNode; } | null>(null);
 
   const throwCoins = () => {
-    setHexagram(Array.from({ length: 6 }, () => Math.random() > 0.5 ? 1 : 0));
-    setOracleText(["WAITING_FOR_EVENT", "NON_INTENTIONALITY", "CHANCE_DETERMINANT", "NOTHING_TO_SAY"][Math.floor(Math.random()*4)]);
+    // True I-Ching hexagram generation using coin method
+    // Each line: 3 coins (heads=3, tails=2), total determines line type
+    // 6=broken changing, 7=unbroken, 8=broken, 9=unbroken changing
+    const generateLine = (): number => {
+      const coin1 = Math.random() > 0.5 ? 3 : 2; // heads=3, tails=2
+      const coin2 = Math.random() > 0.5 ? 3 : 2;
+      const coin3 = Math.random() > 0.5 ? 3 : 2;
+      return coin1 + coin2 + coin3; // 6,7,8,9
+    };
+
+    const newHexagram = Array.from({ length: 6 }, () => generateLine());
+    setHexagram(newHexagram);
+
+    // Calculate hexagram number (simplified - would need full I-Ching table for meanings)
+    const binaryValue = newHexagram.map(line => line === 7 || line === 9 ? 1 : 0).reverse().join('');
+    const hexagramNumber = parseInt(binaryValue, 2) + 1; // 1-64
+
+    setOracleText(`HEXAGRAM_${hexagramNumber}_GENERATED`);
+
+    // Award points for coin throwing
+    onScore?.(1); // 1 point per coin throw
   };
 
   useEffect(() => {
     let micStream: MediaStream | null = null;
-    const mainGain = audioContext.createGain(); const analyser = audioContext.createAnalyser(); analyser.fftSize = 256;
+    const mainGain = audioContext.createGain(); mainGain.gain.setValueAtTime(0, audioContext.currentTime);
+    const analyser = audioContext.createAnalyser(); analyser.fftSize = 256;
     const setupMic = async () => {
       try {
         micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const micSource = audioContext.createMediaStreamSource(micStream);
         const preAmp = audioContext.createGain(); preAmp.gain.setValueAtTime(highSens ? 30 : 15, audioContext.currentTime);
-        micSource.connect(preAmp); preAmp.connect(analyser); analyser.connect(mainGain); mainGain.connect(audioContext.destination);
+        micSource.connect(preAmp); preAmp.connect(analyser);
+        // Removed mic from speakers - analysis only
+        // analyser.connect(mainGain);
         engineRef.current = { micStream, analyser, mainGain };
       } catch (err) { setOracleText("MIC_ERROR"); }
     };
     setupMic();
     const intensityChars = ['.', ':', '*', '#'];
+    const updateDelay = isMobile ? 200 : 140;
     const update = setInterval(() => {
       if (!engineRef.current) return;
       const data = new Uint8Array(engineRef.current.analyser.frequencyBinCount);
@@ -68,9 +92,9 @@ const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated }) => 
       }
       // change oracle text on spikes
       if (norm > 0.4 && Math.random() > 0.9) throwCoins();
-    }, 140);
+    }, updateDelay);
     return () => { clearInterval(update); if (micStream) micStream.getTracks().forEach(t => t.stop()); mainGain.disconnect(); };
-  }, [highSens]);
+  }, [highSens, isMobile]);
 
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
   const intensityChars = ['.', ':', '*', '#'];
@@ -85,8 +109,8 @@ const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated }) => 
       <div className="flex-1 w-full grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <div className="flex flex-col items-center justify-center space-y-2 border border-current border-opacity-20 p-3">
           {hexagram.map((val, i) => (
-            <div key={i} className={`flex gap-4 ${motionClass}`}>
-              {val === 1 ? "-".repeat(16) : <>{'-'.repeat(7)} {'-'.repeat(7)}</>}
+            <div key={i} className={`text-center ${motionClass}`}>
+              {val === 7 || val === 9 ? '─────────' : '───   ───'}
             </div>
           ))}
           <span onClick={throwCoins} className="mt-4 text-[10px] border border-current px-4 py-2 cursor-pointer hover:bg-transparent hover:text-current">[ THROW_COINS ]</span>
