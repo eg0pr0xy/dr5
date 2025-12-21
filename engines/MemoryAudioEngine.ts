@@ -35,9 +35,9 @@ export class MemoryAudioEngine {
       droneActive: true,
       ...config
     };
-    
+
     this.nodes = this.initializeAudioNodes();
-    this.startAudioSources();
+    // Don't start audio sources here - wait for start() method to ensure AudioContext is ready
   }
   
   private initializeAudioNodes(): AudioEngineNodes {
@@ -273,6 +273,9 @@ export class MemoryAudioEngine {
   
   async start(): Promise<void> {
     try {
+      // Start audio sources now that AudioContext should be running
+      this.startAudioSources();
+
       await this.startMicrophone();
       this.startGrainScheduler();
       this.startResonatorCycle();

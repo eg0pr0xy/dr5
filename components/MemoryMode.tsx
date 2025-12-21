@@ -24,7 +24,15 @@ const MemoryMode: React.FC<MemoryModeProps> = ({ audioContext, isAnimated, embed
     currentF0: 110
   };
 
-  const fragments = useMemoryFragments(audioParams);
+  // Force some baseline parameters to ensure word generation
+  const effectiveAudioParams = {
+    ...audioParams,
+    // Ensure minimum activity levels for consistent word spawning
+    rms: Math.max(audioParams.rms, 0.02), // Minimum RMS
+    grainRate: Math.max(audioParams.grainRate, 5), // Minimum grain rate
+  };
+
+  const fragments = useMemoryFragments(effectiveAudioParams);
   const touchField = useTouchField(engine);
   
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
