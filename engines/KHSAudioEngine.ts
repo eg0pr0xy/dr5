@@ -1,5 +1,21 @@
 import { KHSState } from '../types/audio';
 
+export type RadioState = 'OFF' | 'LOADING' | 'LIVE' | 'TEXTURE' | 'OFFLINE';
+
+interface RadioSource {
+  name: string;
+  url: string;
+  fallback: 'SHORTWAVE_EMU';
+}
+
+const RADIO_SOURCES: RadioSource[] = [
+  {
+    name: 'BBC Radio 3',
+    url: 'https://stream.live.vc.bbcmedia.co.uk/bbc_radio_three',
+    fallback: 'SHORTWAVE_EMU'
+  }
+];
+
 export class KHSAudioEngine {
   private audioContext: AudioContext;
   private mainGain: GainNode;
@@ -9,7 +25,16 @@ export class KHSAudioEngine {
   private comp: DynamicsCompressorNode;
   private spectralShaper: BiquadFilterNode[] = [];
   private partials: { osc: OscillatorNode; gain: GainNode; pan: StereoPannerNode; baseFreq: number }[] = [];
-  private radio = { element: null as HTMLAudioElement | null, gain: null as GainNode | null, filter: null as BiquadFilterNode | null, analyser: null as AnalyserNode | null };
+  private radio = {
+    element: null as HTMLAudioElement | null,
+    gain: null as GainNode | null,
+    filter: null as BiquadFilterNode | null,
+    analyser: null as AnalyserNode | null,
+    textureSource: null as AudioBufferSourceNode | null,
+    textureFilter: null as BiquadFilterNode | null,
+    state: 'OFF' as RadioState,
+    textureLevel: 0
+  };
   private moment = {
     id: 0,
     startAt: 0,
@@ -66,6 +91,154 @@ export class KHSAudioEngine {
 
   onDiagnostics(cb: (s: KHSState) => void) { this.onDiag = cb; }
 
+  private async initializeRadio() {
+    const ctx = this.audioContext;
+    const radioGain = ctx.createGain(); radioGain.gain.setValueAtTime(0.0, ctx.currentTime);
+    const radioFilter = ctx.createBiquadFilter(); radioFilter.type = 'lowpass'; radioFilter.frequency.setValueAtTime(800, ctx.currentTime); radioFilter.Q.setValueAtTime(0.707, ctx.currentTime);
+    const radioAnalyser = ctx.createAnalyser(); radioAnalyser.fftSize = 512;
+
+    // Create fallback radio texture (shortwave radio simulation)
+    this.createRadioTexture();
+
+    try {
+      this.radio.state = 'LOADING';
+
+      // Try BBC Radio 3 first (classical music fits Stockhausen aesthetic)
+      const radioUrl = 'https://stream.live.vc.bbcmedia.co.uk/bbc_radio_three';
+      const el = new Audio(radioUrl);
+      el.crossOrigin = 'anonymous';
+      el.preload = 'none'; // Don't preload to avoid unnecessary network requests
+
+      // Set up event handlers for state management
+      const handleCanPlay = async () => {
+        try {
+          el.removeEventListener('canplay', handleCanPlay);
+          const src = ctx.createMediaElementSource(el);
+          src.connect(radioAnalyser);
+          radioAnalyser.connect(radioFilter);
+          radioFilter.connect(radioGain);
+          radioGain.connect(this.bus);
+
+          // Only connect if we successfully created the source
+          this.radio = { element: el, gain: radioGain, filter: radioFilter, analyser: radioAnalyser, textureSource: this.radio.textureSource, textureFilter: this.radio.textureFilter, state: 'LIVE', textureLevel: 0 };
+
+          // Start texture at low level as backup
+          this.setRadioTextureLevel(0.02);
+
+        } catch (error) {
+          console.warn('KHSAudioEngine: Failed to create MediaElementSource:', error);
+          this.radio.state = 'TEXTURE';
+          this.radio = { element: el, gain: radioGain, filter: radioFilter, analyser: radioAnalyser, textureSource: this.radio.textureSource, textureFilter: this.radio.textureFilter, state: 'TEXTURE', textureLevel: 0.1 };
+          this.setRadioTextureLevel(0.1); // Use texture as fallback
+        }
+      };
+
+      const handleError = (event: Event) => {
+        el.removeEventListener('error', handleError);
+        el.removeEventListener('canplay', handleCanPlay);
+
+        // Any error means we fall back to texture
+        this.radio.state = 'TEXTURE';
+        this.radio = { element: null, gain: radioGain, filter: radioFilter, analyser: radioAnalyser, textureSource: this.radio.textureSource, textureFilter: this.radio.textureFilter, state: 'TEXTURE', textureLevel: 0.1 };
+        this.setRadioTextureLevel(0.1); // Use texture as fallback
+      };
+
+      el.addEventListener('canplay', handleCanPlay);
+      el.addEventListener('error', handleError);
+
+      // Set a timeout for loading
+      setTimeout(() => {
+        if (this.radio.state === 'LOADING') {
+          el.removeEventListener('canplay', handleCanPlay);
+          el.removeEventListener('error', handleError);
+          this.radio.state = 'TEXTURE';
+          this.radio = { element: null, gain: radioGain, filter: radioFilter, analyser: radioAnalyser, textureSource: this.radio.textureSource, textureFilter: this.radio.textureFilter, state: 'TEXTURE', textureLevel: 0.1 };
+          this.setRadioTextureLevel(0.1);
+        }
+      }, 5000); // 5 second timeout
+
+    } catch (error) {
+      // Fallback to texture-only mode
+      this.radio.state = 'TEXTURE';
+      this.radio = { element: null, gain: radioGain, filter: radioFilter, analyser: radioAnalyser, textureSource: this.radio.textureSource, textureFilter: this.radio.textureFilter, state: 'TEXTURE', textureLevel: 0.1 };
+      this.setRadioTextureLevel(0.1);
+    }
+  }
+
+  private createRadioTexture() {
+    const ctx = this.audioContext;
+
+    // Create bandpass filter for shortwave radio simulation
+    const textureFilter = ctx.createBiquadFilter();
+    textureFilter.type = 'bandpass';
+    textureFilter.frequency.setValueAtTime(800, ctx.currentTime); // Shortwave-like frequency
+    textureFilter.Q.setValueAtTime(2.0, ctx.currentTime);
+
+    // Create longer buffer for SHORTWAVE_EMU (12 seconds for more variety)
+    const bufferSize = ctx.sampleRate * 12; // 12 seconds
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    // SHORTWAVE_EMU: bandpassed noise + slow AM modulation + tuning gaps
+    let phase = 0;
+    const modulationRate = 0.05; // Very slow AM modulation (sub-0.1 Hz)
+
+    for (let i = 0; i < bufferSize; i++) {
+      const t = i / ctx.sampleRate;
+
+      // Occasional "tuning gaps" (gain dips) - simulate retuning
+      const tuningGap = Math.sin(t * 0.1) > 0.95 ? 0.1 : 1.0; // Brief gaps
+
+      // Slow AM modulation (envelope)
+      const amModulation = Math.sin(2 * Math.PI * modulationRate * t) * 0.4 + 0.6;
+
+      // Frequency modulation for radio-like effect
+      const fmModulation = Math.sin(2 * Math.PI * 0.2 * t) * 0.2 + 0.8;
+      const modulatedFreq = 800 * fmModulation;
+
+      // Generate filtered noise
+      const noise = (Math.random() * 2 - 1) * 0.08;
+      const filtered = noise * Math.sin(2 * Math.PI * modulatedFreq * t + phase);
+
+      // Add some harmonic content for richness
+      const harmonic1 = Math.sin(2 * Math.PI * (modulatedFreq * 1.5) * t + phase * 1.5) * 0.04;
+      const harmonic2 = Math.sin(2 * Math.PI * (modulatedFreq * 2.0) * t + phase * 2.0) * 0.02;
+
+      // Apply AM modulation and tuning gaps
+      const sample = (filtered + harmonic1 + harmonic2) * amModulation * tuningGap;
+
+      data[i] = Math.max(-1, Math.min(1, sample * 0.4)); // Keep volume reasonable
+
+      phase += 0.005; // Slow phase evolution
+    }
+
+    const textureSource = ctx.createBufferSource();
+    textureSource.buffer = buffer;
+    textureSource.loop = true;
+
+    const textureGain = ctx.createGain();
+    textureGain.gain.setValueAtTime(0, ctx.currentTime);
+
+    textureSource.connect(textureGain);
+    textureGain.connect(textureFilter);
+    textureFilter.connect(this.bus);
+
+    textureSource.start();
+
+    this.radio.textureSource = textureSource;
+    this.radio.textureFilter = textureFilter;
+  }
+
+  private setRadioTextureLevel(level: number) {
+    if (this.radio.textureFilter?.gain) {
+      const now = this.audioContext.currentTime;
+      this.radio.textureFilter.gain.cancelScheduledValues(now);
+      this.radio.textureFilter.gain.setValueAtTime(this.radio.textureLevel, now);
+      this.radio.textureFilter.gain.linearRampToValueAtTime(level, now + 1.0);
+      this.radio.textureLevel = level;
+    }
+  }
+
   private buildGraph() {
     const ctx = this.audioContext;
     const roomModes = [86, 172, 344, 516, 688];
@@ -80,90 +253,91 @@ export class KHSAudioEngine {
     const RATIOS = [1, 1.0679, 1.125, 1.1892, 1.25, 1.3333, 1.4142, 1.4983, 1.618, 1.7818, 1.88, 2.0, 2.13, 2.25];
     this.partials = RATIOS.map((ratio) => {
       const osc = ctx.createOscillator(); const gain = ctx.createGain(); const pan = ctx.createStereoPanner();
-      const base = 43.2 * ratio; osc.type = 'sine'; osc.frequency.setValueAtTime(base, ctx.currentTime); gain.gain.setValueAtTime(0.02, ctx.currentTime); // Increased from 0.0025
+      const base = 43.2 * ratio; osc.type = 'sine'; osc.frequency.setValueAtTime(base, ctx.currentTime); gain.gain.setValueAtTime(0.02, ctx.currentTime);
       osc.connect(gain); gain.connect(pan); this.spectralShaper.forEach(f => pan.connect(f)); osc.start(); return { osc, gain, pan, baseFreq: base };
     });
-    // Radio chain
-    const radioGain = ctx.createGain(); radioGain.gain.setValueAtTime(0.0, ctx.currentTime);
-    const radioFilter = ctx.createBiquadFilter(); radioFilter.type = 'lowpass'; radioFilter.frequency.setValueAtTime(800, ctx.currentTime); radioFilter.Q.setValueAtTime(0.707, ctx.currentTime);
-    const radioAnalyser = ctx.createAnalyser(); radioAnalyser.fftSize = 512;
-    try {
-      const el = new Audio('https://dradio-edge-209a-fra-lg-cdn.cast.addradio.de/dradio/dlf/live/mp3/128/stream.mp3');
-      el.crossOrigin = 'anonymous'; el.loop = true; const src = ctx.createMediaElementSource(el);
-      src.connect(radioAnalyser);
-      radioAnalyser.connect(radioFilter);
-      radioFilter.connect(radioGain);
-      radioGain.connect(this.bus);
-      // Gracefully handle load/playback errors by ramping radio bed to 0
-      el.addEventListener('error', () => {
-        const t = ctx.currentTime; const gp = radioGain.gain;
-        gp.cancelScheduledValues(t); gp.setValueAtTime(gp.value, t); gp.linearRampToValueAtTime(0.0, t + 0.5);
-      });
-      this.radio = { element: el, gain: radioGain, filter: radioFilter, analyser: radioAnalyser };
-    } catch { this.radio = { element: null, gain: radioGain, filter: radioFilter, analyser: radioAnalyser }; }
+
+    // Initialize radio system (async)
+    this.initializeRadio();
   }
 
   private scheduleNewMoment() {
     const ctx = this.audioContext; const now = ctx.currentTime;
 
-    // Stockhausen-inspired moment structure
+    // Stockhausen-inspired moment structure - ensure perceptible structural change
     const formTypes: ('punktuell' | 'gruppen' | 'statistisch')[] = ['punktuell', 'gruppen', 'statistisch'];
     const transformationTypes: ('rotation' | 'inversion' | 'multiplication' | 'division')[] = ['rotation', 'inversion', 'multiplication', 'division'];
 
     const formType = formTypes[Math.floor(Math.random() * formTypes.length)];
     const transformationType = transformationTypes[Math.floor(Math.random() * transformationTypes.length)];
 
-    // Duration based on form type (punktuell = short, gruppen = medium, statistisch = long)
-    let nextIn: number, fade: number;
-    switch (formType) {
-      case 'punktuell': nextIn = 30 + Math.random() * 60; fade = 5 + Math.random() * 10; break;
-      case 'gruppen': nextIn = 60 + Math.random() * 90; fade = 15 + Math.random() * 20; break;
-      case 'statistisch': nextIn = 90 + Math.random() * 120; fade = 25 + Math.random() * 40; break;
-    }
+    // LONG-FORM DURATIONS: Ensure structural evolution over minutes
+    // Each moment represents a distinct SPECTRAL STATE with perceptible change
+    const baseDuration = 90 + Math.random() * 90; // 90-180 seconds (guaranteed substantial)
+    const baseFade = 30 + Math.random() * 30; // 30-60 second crossfades (perceptible transitions)
 
-    // Generate target gains based on form type
+    // Form types influence duration slightly but maintain substantial presence
+    const durationMultiplier = formType === 'punktuell' ? 0.9 : formType === 'gruppen' ? 1.0 : 1.1;
+    const fadeMultiplier = formType === 'punktuell' ? 0.8 : formType === 'gruppen' ? 1.0 : 1.2;
+
+    const nextIn = baseDuration * durationMultiplier;
+    const fade = Math.min(baseFade * fadeMultiplier, nextIn * 0.4); // Fade can't be more than 40% of duration
+
+    // Generate target gains based on form type - RANDOMNESS INFLUENCES STRUCTURE
     const target = new Array(14).fill(0);
     let peaks: number;
 
+    // Form type influences structural complexity (real audio parameter)
     switch (formType) {
       case 'punktuell':
-        // Single dominant peak
+        // Single dominant peak - focused, intense structure
         peaks = 1;
         break;
       case 'gruppen':
-        // 2-4 peaks forming a group
+        // 2-4 peaks forming a group - clustered, relational structure
         peaks = 2 + Math.floor(Math.random() * 3);
         break;
       case 'statistisch':
-        // Statistical distribution across spectrum
+        // Statistical distribution - diffuse, indeterminate structure
         peaks = 3 + Math.floor(Math.random() * 5);
         break;
     }
 
-    // Apply transformation to spectral distribution
+    // Apply transformation to spectral distribution - STRUCTURAL RANDOMNESS
     for (let k = 0; k < peaks; k++) {
+      // Random center selection influences which harmonics are emphasized
       let center = Math.floor(Math.random() * 14);
 
-      // Apply transformation
+      // Transformation type affects structural relationships (real audio change)
       switch (transformationType) {
         case 'rotation':
-          center = (center + 7) % 14; // Rotate by half spectrum
+          // Rotates harmonic relationships - changes which frequencies relate
+          center = (center + Math.floor(Math.random() * 7)) % 14;
           break;
         case 'inversion':
-          center = 13 - center; // Mirror spectrum
+          // Inverts spectral balance - fundamental becomes prominent
+          center = 13 - center;
           break;
         case 'multiplication':
-          center = Math.min(13, center * 2); // Double frequency position
+          // Multiplies harmonic spacing - creates new overtone relationships
+          center = Math.min(13, center * (1.5 + Math.random() * 0.5));
           break;
         case 'division':
-          center = Math.floor(center / 2); // Halve frequency position
+          // Divides harmonic spacing - creates subharmonic relationships
+          center = Math.floor(center / (1.5 + Math.random() * 0.5));
           break;
       }
 
-      const spread = formType === 'punktuell' ? 0.5 : formType === 'gruppen' ? 1.2 : 2.0;
+      // Spread influences spectral density (real audio parameter)
+      const spread = formType === 'punktuell' ? (0.3 + Math.random() * 0.4) :
+                    formType === 'gruppen' ? (1.0 + Math.random() * 0.4) :
+                    (1.8 + Math.random() * 0.4);
+
       for (let i = 0; i < 14; i++) {
         const distance = Math.abs(i - center) / spread;
-        target[i] += Math.exp(-0.5 * distance * distance);
+        // Random amplitude variation affects gain structure
+        const amplitude = Math.exp(-0.5 * distance * distance) * (0.8 + Math.random() * 0.4);
+        target[i] += amplitude;
       }
     }
 
@@ -274,9 +448,9 @@ export class KHSAudioEngine {
 
     this.spectralShaper.forEach((filt, idx) => {
       const baseF = filt.frequency.value;
-      let fTarget = Math.max(60, Math.min(12000, baseF * (0.9 + Math.random() * 0.2)));
 
       // Apply transformation to filter frequencies
+      let fTarget = baseF * (0.9 + Math.random() * 0.2);
       switch (transformationType) {
         case 'rotation':
           fTarget *= Math.sin((idx / 5) * Math.PI * 2 + this.stockhausenState.rotationAngle) * 0.3 + 1;
@@ -291,6 +465,12 @@ export class KHSAudioEngine {
           fTarget /= (idx + 1) * 0.5 + 1;
           break;
       }
+
+      // CLAMP filter frequencies to safe range: 20Hz - (sampleRate/2 * 0.9)
+      const nyquist = this.audioContext.sampleRate / 2;
+      const maxFreq = nyquist * 0.9; // 90% of Nyquist to be safe
+      const minFreq = 20; // Minimum audible frequency
+      fTarget = Math.max(minFreq, Math.min(maxFreq, fTarget));
 
       const qTarget = 8 + Math.random() * 6;
 

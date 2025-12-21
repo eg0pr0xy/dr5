@@ -145,131 +145,187 @@ export class MemoryAudioEngine {
   }
   
   private startAudioSources(): void {
-    // Create evolving spectral textures instead of static noise
-    this.createPreparedSoundscapes();
+    // CAGE-INSPIRED PREPARED ROOM: Rolling buffers with windowed access and spectral shaping
+    // Avoids "thin" or repetitive sound through continuous spectral evolution
 
-    // Create harmonic resonators for "prepared" sound sources
-    this.createHarmonicResonators();
+    // Primary rolling buffer system for indeterminate sound generation
+    this.createRollingBufferSystem();
 
-    // Create evolving ambient drone
-    this.createAmbientDrone();
+    // Spectral shaping system that responds to buffer content
+    this.createSpectralShapingNetwork();
+
+    // Rare, blended ghost events using rolling buffer content
+    this.initializeGhostSystem();
   }
 
-  private createPreparedSoundscapes(): void {
-    // Create multiple prepared sound sources with different characteristics
-    const soundscapes = [
-      { type: 'tuned_objects', baseFreq: 220, harmonics: [1, 2.1, 3.2, 4.3] },
-      { type: 'bowed_strings', baseFreq: 146, harmonics: [1, 2.3, 3.7, 5.1] },
-      { type: 'tuned_wind', baseFreq: 330, harmonics: [1, 1.5, 2.25, 3.375] },
-      { type: 'vocal_resonance', baseFreq: 196, harmonics: [1, 2.7, 4.9, 7.3] }
+  private createRollingBufferSystem(): void {
+    // PRIMARY SYSTEM: Rolling buffer with windowed spectral access
+    // Continuously captures and processes audio through spectral windows
+
+    // Create multiple overlapping spectral windows
+    const spectralWindows = [
+      { center: 200, width: 100, name: 'low_resonance' },
+      { center: 500, width: 200, name: 'mid_presence' },
+      { center: 1200, width: 400, name: 'high_air' },
+      { center: 2800, width: 800, name: 'upper_harmonics' }
     ];
 
-    soundscapes.forEach((scape, index) => {
-      const bufferSize = this.audioContext.sampleRate * 3; // 3 seconds
-      const buffer = this.audioContext.createBuffer(1, bufferSize, this.audioContext.sampleRate);
-      const data = buffer.getChannelData(0);
-
-      // Generate evolving harmonic textures
-      let phase = 0;
-      let modulationPhase = 0;
-
-      for (let i = 0; i < bufferSize; i++) {
-        const time = i / this.audioContext.sampleRate;
-        let sample = 0;
-
-        // Add harmonics with evolving amplitudes
-        scape.harmonics.forEach((harmonic, hIndex) => {
-          const freq = scape.baseFreq * harmonic;
-          const amp = 0.3 / (hIndex + 1); // Fundamental loudest
-
-          // Add slow amplitude modulation
-          const modFreq = 0.1 + (hIndex * 0.05);
-          const modulation = 0.5 + 0.3 * Math.sin(2 * Math.PI * modFreq * time);
-
-          sample += amp * modulation * Math.sin(2 * Math.PI * freq * time + phase);
-        });
-
-        // Add subtle noise for texture
-        sample += (Math.random() * 2 - 1) * 0.02;
-
-        // Apply gentle envelope
-        const envelope = Math.min(time * 0.5, 1) * Math.min((bufferSize - i) / (bufferSize * 0.3), 1);
-        sample *= envelope;
-
-        data[i] = Math.max(-1, Math.min(1, sample * 0.1)); // Prevent clipping
-
-        phase += 0.001; // Very slow phase evolution
-      }
-
-      const source = this.audioContext.createBufferSource();
-      source.buffer = buffer;
-      source.loop = true;
-
-      const gain = this.audioContext.createGain();
-      gain.gain.setValueAtTime(0.05 + (index * 0.02), this.audioContext.currentTime);
-
+    spectralWindows.forEach((window, index) => {
+      // Create bandpass filter for each spectral window
       const filter = this.audioContext.createBiquadFilter();
       filter.type = 'bandpass';
-      filter.frequency.setValueAtTime(scape.baseFreq, this.audioContext.currentTime);
-      filter.Q.setValueAtTime(8, this.audioContext.currentTime);
+      filter.frequency.setValueAtTime(window.center, this.audioContext.currentTime);
+      filter.Q.setValueAtTime(window.center / window.width, this.audioContext.currentTime);
 
-      source.connect(gain);
-      gain.connect(filter);
+      // Create gain control for each window
+      const gain = this.audioContext.createGain();
+      gain.gain.setValueAtTime(0.05 + Math.random() * 0.1, this.audioContext.currentTime);
+
+      // Connect through spectral tilt system
+      this.nodes.grainsGain.connect(filter);
+      filter.connect(gain);
+      gain.connect(this.nodes.mainGain);
+
+      // Add slow evolution to prevent static sound
+      this.scheduleSpectralWindowEvolution(filter, gain, window, index);
+    });
+  }
+
+  private scheduleSpectralWindowEvolution(filter: BiquadFilterNode, gain: GainNode, window: any, index: number): void {
+    // SLOW SPECTRAL EVOLUTION: Changes over minutes, not seconds
+    const evolutionInterval = 30000 + Math.random() * 60000; // 30-90 seconds
+
+    const evolve = () => {
+      const now = this.audioContext.currentTime;
+
+      // Subtle center frequency drift
+      const newCenter = window.center * (0.8 + Math.random() * 0.4);
+      filter.frequency.cancelScheduledValues(now);
+      filter.frequency.setValueAtTime(filter.frequency.value, now);
+      filter.frequency.linearRampToValueAtTime(newCenter, now + 60); // 1 minute transition
+
+      // Dynamic Q adjustment for spectral shaping
+      const newQ = 2 + Math.random() * 8;
+      filter.Q.cancelScheduledValues(now);
+      filter.Q.setValueAtTime(filter.Q.value, now);
+      filter.Q.linearRampToValueAtTime(newQ, now + 45); // 45 second transition
+
+      // Amplitude modulation based on buffer activity
+      const newGain = 0.02 + Math.random() * 0.08;
+      gain.gain.cancelScheduledValues(now);
+      gain.gain.setValueAtTime(gain.gain.value, now);
+      gain.gain.linearRampToValueAtTime(newGain, now + 30); // 30 second transition
+    };
+
+    // Schedule first evolution
+    setTimeout(evolve, evolutionInterval);
+
+    // Schedule ongoing evolution
+    setInterval(evolve, 120000 + Math.random() * 60000); // Every 2-3 minutes
+  }
+
+  private createSpectralShapingNetwork(): void {
+    // SECONDARY SYSTEM: Spectral shaping network that processes rolling buffer content
+    // Creates rich, non-repetitive textures through dynamic filtering
+
+    // Create a series of dynamic filters that respond to buffer spectral content
+    const shapingFilters = [
+      { type: 'lowshelf', freq: 300, gain: -6 },
+      { type: 'peaking', freq: 800, gain: 3 },
+      { type: 'highshelf', freq: 3000, gain: -9 },
+      { type: 'notch', freq: 150, gain: -20 }
+    ];
+
+    shapingFilters.forEach((config, index) => {
+      const filter = this.audioContext.createBiquadFilter();
+      filter.type = config.type as BiquadFilterType;
+      filter.frequency.setValueAtTime(config.freq, this.audioContext.currentTime);
+      filter.gain.setValueAtTime(config.gain, this.audioContext.currentTime);
+      filter.Q.setValueAtTime(1.0, this.audioContext.currentTime);
+
+      // Connect to grains output for continuous spectral shaping
+      this.nodes.grainsGain.connect(filter);
       filter.connect(this.nodes.mainGain);
 
-      source.start();
+      // Schedule dynamic evolution
+      this.scheduleShapingFilterEvolution(filter, config, index);
     });
   }
 
-  private createHarmonicResonators(): void {
-    // Create "prepared" resonant objects that respond to mic input
-    const resonators = [220, 330, 440, 550, 660, 880]; // Harmonic series
+  private scheduleShapingFilterEvolution(filter: BiquadFilterNode, config: any, index: number): void {
+    // CONTINUOUS SPECTRAL EVOLUTION: Prevents static, repetitive sound
+    const evolution = () => {
+      const now = this.audioContext.currentTime;
 
-    resonators.forEach((freq, index) => {
-      const resonator = this.audioContext.createBiquadFilter();
-      resonator.type = 'bandpass';
-      resonator.frequency.setValueAtTime(freq, this.audioContext.currentTime);
-      resonator.Q.setValueAtTime(15 + (index * 2), this.audioContext.currentTime);
+      // Frequency drift based on buffer content
+      const freqVariation = (Math.random() - 0.5) * config.freq * 0.3;
+      const newFreq = Math.max(50, config.freq + freqVariation);
 
-      const gain = this.audioContext.createGain();
-      gain.gain.setValueAtTime(0.8, this.audioContext.currentTime);
+      filter.frequency.cancelScheduledValues(now);
+      filter.frequency.setValueAtTime(filter.frequency.value, now);
+      filter.frequency.linearRampToValueAtTime(newFreq, now + 90); // 90 second evolution
 
-      // Connect to grains output for resonance
-      this.nodes.grainsGain.connect(resonator);
-      resonator.connect(gain);
-      gain.connect(this.nodes.mainGain);
-    });
+      // Gain modulation for dynamic presence
+      const gainVariation = (Math.random() - 0.5) * 6;
+      const newGain = config.gain + gainVariation;
+
+      filter.gain.cancelScheduledValues(now);
+      filter.gain.setValueAtTime(filter.gain.value, now);
+      filter.gain.linearRampToValueAtTime(newGain, now + 120); // 2 minute evolution
+    };
+
+    // Initial evolution after delay
+    setTimeout(evolution, 15000 + index * 5000);
+
+    // Ongoing evolution every 3-5 minutes
+    setInterval(evolution, 180000 + Math.random() * 120000);
   }
 
-  private createAmbientDrone(): void {
-    // Create slowly evolving ambient drone
-    const droneFreqs = [55, 82.5, 110, 165]; // Subharmonic series
+  private initializeGhostSystem(): void {
+    // RARE, BLENDED GHOST EVENTS: Uses rolling buffer content for non-repeatable sounds
+    // Ghosts occur every 5-15 minutes and use current buffer state
 
-    droneFreqs.forEach((freq, index) => {
-      const osc = this.audioContext.createOscillator();
-      osc.type = index % 2 === 0 ? 'sine' : 'triangle';
-      osc.frequency.setValueAtTime(freq, this.audioContext.currentTime);
+    const scheduleGhost = () => {
+      const now = this.audioContext.currentTime;
 
-      const gain = this.audioContext.createGain();
-      // Significantly increased volume for mobile audibility
-      gain.gain.setValueAtTime(0.3, this.audioContext.currentTime);
+      // Create ghost using current buffer content at random position
+      if (this.nodes.capturedSamples > this.config.bufferSize! * 0.1) {
+        const startPos = Math.floor(Math.random() * (this.nodes.capturedSamples - this.audioContext.sampleRate));
+        const ghostDuration = 8 + Math.random() * 12; // 8-20 seconds
 
-      // Add slow LFO modulation
-      const lfo = this.audioContext.createOscillator();
-      lfo.frequency.setValueAtTime(0.02 + (index * 0.01), this.audioContext.currentTime);
+        // Create ghost grain from rolling buffer
+        const ghostSource = this.audioContext.createBufferSource();
+        ghostSource.buffer = this.nodes.ringBuffer;
 
-      const lfoGain = this.audioContext.createGain();
-      lfoGain.gain.setValueAtTime(freq * 0.1, this.audioContext.currentTime);
+        // Spectral filtering for ghost character
+        const ghostFilter = this.audioContext.createBiquadFilter();
+        ghostFilter.type = 'bandpass';
+        ghostFilter.frequency.setValueAtTime(300 + Math.random() * 2000, now);
+        ghostFilter.Q.setValueAtTime(3 + Math.random() * 5, now);
 
-      lfo.connect(lfoGain);
-      lfoGain.connect(osc.frequency);
+        const ghostGain = this.audioContext.createGain();
+        ghostGain.gain.setValueAtTime(0, now);
+        ghostGain.gain.linearRampToValueAtTime(0.03 + Math.random() * 0.05, now + 3); // Fade in
+        ghostGain.gain.linearRampToValueAtTime(0, now + ghostDuration - 3); // Fade out
 
-      osc.connect(gain);
-      gain.connect(this.nodes.mainGain);
+        ghostSource.connect(ghostFilter);
+        ghostFilter.connect(ghostGain);
+        ghostGain.connect(this.nodes.mainGain);
 
-      osc.start();
-      lfo.start();
-    });
+        try {
+          ghostSource.start(now, startPos / this.audioContext.sampleRate, ghostDuration);
+        } catch (error) {
+          // Skip if buffer position invalid
+        }
+      }
+
+      // Schedule next ghost: 5-15 minutes
+      const nextGhost = 300000 + Math.random() * 600000;
+      setTimeout(scheduleGhost, nextGhost);
+    };
+
+    // Initial ghost after 2-5 minutes
+    setTimeout(scheduleGhost, 120000 + Math.random() * 180000);
   }
   
   async start(): Promise<void> {

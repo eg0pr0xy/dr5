@@ -60,6 +60,7 @@ const App: React.FC = () => {
   const [showInfo, setShowInfo] = useState(false);
   const [infoFlipped, setInfoFlipped] = useState(false);
   const [showResp, setShowResp] = useState(false);
+  const [lastColorSwitch, setLastColorSwitch] = useState(0);
 
   // Gamification: Cryptic scoring system
   const [score, setScore] = useState(() => {
@@ -105,6 +106,18 @@ const App: React.FC = () => {
   
   const audioContextRef = useRef<AudioContext | null>(null);
   const lastInteractRef = useRef<number>(Date.now());
+
+  // UNIFIED AUDIO ARCHITECTURE
+  const masterBusRef = useRef<{
+    limiter: DynamicsCompressorNode;
+    analyser: AnalyserNode;
+    presenceMonitor: {
+      rms: number;
+      modeStatus: 'ACTIVE' | 'SILENT' | 'FALLBACK';
+      lastCheck: number;
+    };
+  } | null>(null);
+
   // Audio diagnostics
   const [audioState, setAudioState] = useState<string>('suspended');
   const [resumeCount, setResumeCount] = useState(0);
@@ -119,6 +132,9 @@ const App: React.FC = () => {
   const [debugOverlay, setDebugOverlay] = useState(false);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const [panelOverflow, setPanelOverflow] = useState(false);
+
+  // Audio presence diagnostics
+  const [audioPresence, setAudioPresence] = useState({ rms: -60, modeStatus: 'ACTIVE' as 'ACTIVE' | 'SILENT' | 'FALLBACK' });
 
   // Mobile detection and reduced motion preference
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -320,6 +336,65 @@ const App: React.FC = () => {
         }
       }
 
+      // CREATE UNIFIED MASTER BUS
+      const mainGain = ctx.createGain();
+      mainGain.gain.setValueAtTime(0.8, ctx.currentTime);
+      mainGain.connect(ctx.destination);
+
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.setValueAtTime(-12, ctx.currentTime);
+      limiter.knee.setValueAtTime(6, ctx.currentTime);
+      limiter.ratio.setValueAtTime(4, ctx.currentTime);
+      limiter.attack.setValueAtTime(0.005, ctx.currentTime);
+      limiter.release.setValueAtTime(0.1, ctx.currentTime);
+      limiter.connect(mainGain);
+
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 2048;
+      limiter.connect(analyser);
+
+      masterBusRef.current = {
+        limiter,
+        analyser,
+        presenceMonitor: {
+          rms: -60,
+          modeStatus: 'ACTIVE',
+          lastCheck: Date.now()
+        }
+      };
+
+      // AUDIO PRESENCE MONITOR
+      const presenceInterval = setInterval(() => {
+        if (!masterBusRef.current) return;
+
+        const data = new Uint8Array(masterBusRef.current.analyser.frequencyBinCount);
+        masterBusRef.current.analyser.getByteFrequencyData(data);
+
+        // Calculate RMS
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) {
+          sum += data[i] * data[i];
+        }
+        const rms = Math.sqrt(sum / data.length) / 128; // Normalize to 0-1
+        const rmsDb = rms > 0 ? 20 * Math.log10(rms) : -60;
+
+        // Determine mode status
+        let modeStatus: 'ACTIVE' | 'SILENT' | 'FALLBACK' = 'ACTIVE';
+        if (rmsDb < -50) modeStatus = 'SILENT';
+        else if (rmsDb < -30) modeStatus = 'FALLBACK';
+
+        masterBusRef.current.presenceMonitor = {
+          rms: Math.round(rmsDb),
+          modeStatus,
+          lastCheck: Date.now()
+        };
+
+        setAudioPresence({
+          rms: Math.round(rmsDb),
+          modeStatus
+        });
+      }, 1000); // Check every second
+
       setIsBooting(true);
       console.log('Audio initialization completed, final context state:', ctx.state);
     } catch (error) {
@@ -510,6 +585,17 @@ const App: React.FC = () => {
   };
 
   const modeLabel = (m: Mode) => m === Mode.DRONE ? 'NIHIL_CORE' : m;
+
+  // Color inversion callback for KHS moment boundaries
+  const handleColorInversion = () => {
+    const now = Date.now() / 1000; // seconds
+    // Only allow inversion if 90+ seconds since last switch
+    if (now - lastColorSwitch >= 90) {
+      setIsInverted(prev => !prev);
+      setLastColorSwitch(now);
+    }
+  };
+
   const renderActiveMode = () => {
     switch (displayMode) {
       case Mode.DRONE:
@@ -521,9 +607,9 @@ const App: React.FC = () => {
       case Mode.GENERATIVE:
         return <GenerativeMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
       case Mode.ORACLE:
-        return <OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} onScore={addScore} />;
+        return <OracleMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} onScore={addScore} onColorInversion={handleColorInversion} />;
       case Mode.KHS:
-        return <KHSMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} />;
+        return <KHSMode audioContext={audioContextRef.current!} isAnimated={isAnimatedUI} isMobile={isMobile} onColorInversion={handleColorInversion} />;
       default:
         return null;
     }
@@ -622,7 +708,8 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <nav className="mt-2 tabbar flex items-center shrink-0">
+        {/* Navigation - visible on landing page with low opacity, animates after entry */}
+        <nav className={`mt-2 tabbar flex items-center shrink-0 transition-opacity duration-1000 ${isAudioStarted ? 'opacity-100' : 'opacity-20'}`}>
           <div className="flex gap-4 overflow-x-auto no-scrollbar flex-1">
             {Object.values(Mode).map(m => (
               <span

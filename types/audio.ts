@@ -88,6 +88,15 @@ export interface KHSModeProps {
   isAnimated?: boolean;
   embedded?: boolean;
   isMobile?: boolean;
+  onColorInversion?: () => void;
+}
+
+export interface OracleModeProps {
+  audioContext: AudioContext;
+  isAnimated?: boolean;
+  isMobile?: boolean;
+  onScore?: (points: number, context?: string) => void;
+  onColorInversion?: () => void;
 }
 
 export interface TouchFieldState {

@@ -3,9 +3,12 @@ import type { KHSModeProps } from '../types/audio';
 import { useKHSAudio } from '../hooks/useKHSAudio';
 
 const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = false }) => {
-  const { diag, radioActive, setRadioActive } = useKHSAudio(audioContext);
+  const { diag, radioActive, setRadioActive, radioState, radioTextureLevel } = useKHSAudio(audioContext);
   const [activePermIndex, setActivePermIndex] = useState(0);
   const [matrixTick, setMatrixTick] = useState(0);
+  const [currentMomentId, setCurrentMomentId] = useState(0);
+  const [lastColorSwitch, setLastColorSwitch] = useState(0);
+  const [isInverted, setIsInverted] = useState(false);
   const serialMatrix = useRef<number[][]>(
     Array.from({ length: 14 }, () => Array.from({ length: 14 }, () => Math.random() > 0.5 ? 1 : 0))
   );
@@ -17,38 +20,49 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
     return () => window.clearInterval(id);
   }, [isMobile]);
   
-  // Complex ASCII animation: ripple + random twinkle based on moment state
+  // ASCII VISUALS: Only update when audio parameters actually change
+  // No continuous animation - only respond to structural audio changes
+
+  // DISCRETE VISUAL ANIMATION: Only at moment boundaries
   useEffect(() => {
-    const animate = () => {
-      const m = serialMatrix.current;
-      const t = matrixTick + (diag.momentId % 7);
-      for (let r = 0; r < 14; r++) {
-        for (let c = 0; c < 14; c++) {
-          const phase = (r + c + t) % 7;
-          const base = phase < 3 ? 1 : 0;
-          const twinkle = Math.random() < 0.02 ? 1 : 0;
-          m[r][c] = base || twinkle ? 1 : 0;
+    if (diag.momentId !== currentMomentId) {
+      // New moment has begun - trigger discrete visual change
+      setCurrentMomentId(diag.momentId);
+
+      // Generate new serial matrix pattern based on moment characteristics
+      const newMatrix = Array.from({ length: 14 }, (_, r) =>
+        Array.from({ length: 14 }, (_, c) => {
+          // Pattern based on moment form type and transformation
+          const formSeed = diag.formType === 'punktuell' ? 1 : diag.formType === 'gruppen' ? 2 : 3;
+          const transSeed = diag.transformationType === 'rotation' ? 1 : diag.transformationType === 'inversion' ? 2 : diag.transformationType === 'multiplication' ? 3 : 4;
+
+          // Create deterministic but varied pattern
+          const pattern = Math.sin((r * formSeed + c * transSeed) * 0.5) > Math.cos(r + c) * 0.3;
+          return pattern ? 1 : 0;
+        })
+      );
+
+      serialMatrix.current = newMatrix;
+
+      // MEANINGFUL COLOR SWITCHING: At moment boundaries with 90s minimum interval
+      const now = Date.now() / 1000; // seconds
+      if (now - lastColorSwitch >= 90) {
+        // 10% chance of color inversion at moment boundary
+        if (Math.random() < 0.1) {
+          setIsInverted(prev => !prev);
+          setLastColorSwitch(now);
         }
       }
-      setMatrixTick((v) => (v + 1) % 1000);
-    };
+    }
+  }, [diag.momentId, currentMomentId, lastColorSwitch]);
 
-    // Slower update rate on mobile to save battery
-    const updateDelay = isMobile ? 180 : 120;
-    const id = window.setInterval(() => {
-      animate();
-    }, updateDelay);
-
-    return () => {
-      clearInterval(id);
-    };
-  }, [diag.momentId, matrixTick, isMobile]);
-
-  // Force animation update when diagnostics change
+  // SERIAL INDEX ADVANCEMENT: Discrete animation trigger
   useEffect(() => {
-    // This ensures the animation updates when audio diagnostics change
-    setMatrixTick(prev => prev + 1);
-  }, [diag]);
+    if (activePermIndex === 13) {
+      // Serial index has wrapped - trigger minor visual update
+      setMatrixTick(prev => prev + 1);
+    }
+  }, [activePermIndex]);
 
   const motionClass = isAnimated ? 'animate-ui-motion' : '';
   return (
@@ -63,6 +77,9 @@ const KHSMode: React.FC<KHSModeProps> = ({ audioContext, isAnimated, isMobile = 
       </header>
       <div className={`text-[9px] opacity-60 uppercase tracking-[0.2em] mb-2 tabular-nums ${motionClass}`}>
         STOCKHAUSEN_DIAG: [ MOMENT:{diag.momentId} ] [ FORM:{diag.formType || 'UNK'} ] [ TRANS:{diag.transformationType || 'UNK'} ] [ ACTIVE:{diag.active} ] [ SHIFT:{diag.nextShift}s ]
+      </div>
+      <div className={`text-[9px] opacity-50 uppercase tracking-[0.2em] mb-2 tabular-nums ${motionClass}`}>
+        RADIO_STATE: {radioState} [ TEXTURE:{(radioTextureLevel * 100).toFixed(0)}% ]
       </div>
       <div className={`flex-1 w-full h-full border border-current border-opacity-10 bg-black/5 flex flex-col p-2 ${motionClass}`}>
         <div className="flex-1 w-full h-full grid grid-cols-14 gap-1 opacity-60">

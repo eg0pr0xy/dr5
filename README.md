@@ -54,11 +54,11 @@ A chance-based decision engine using authentic I-Ching hexagram generation.
 - **Visuals**: Authentic hexagrams (broken/unbroken lines) and "growth residues" triggered by volume peaks.
 
 ### 6. KHS (STOCKHAUSEN HOMAGE)
-A speculative simulation of a 1950s Electronic Studio with spectral peak detection.
-- **Sonic Engine**: 12-tone twin-detuned sine bank with waveshaper saturation.
-- **Tuning**: Spectral peak detection for harmonic locking onto live radio signals (DLF).
-- **Controls**: `LOCK` harmonics by clicking detected spectral peaks; `SAT` controls tube-style saturation drive.
-- **Visuals**: Vector-style tuning dial and harmonic complexity spectrum.
+A speculative simulation of a 1950s Electronic Studio with long-form spectral evolution.
+- **Sonic Engine**: 14-partial Stockhausen-inspired harmonic field with moment-based evolution (60-180s states).
+- **Radio Integration**: SHORTWAVE_EMU provides bandpassed noise with AM modulation and tuning gaps (no network dependency).
+- **Controls**: Radio texture toggle; spectral evolution follows 20-60s crossfade transitions.
+- **Visuals**: ASCII matrix changes discretely at moment boundaries; ASCII diagnostics show current spectral bias.
 
 ---
 

@@ -48,6 +48,59 @@ const OracleMode: React.FC<OracleModeProps> = ({ audioContext, isAnimated, isMob
 
     // Award points for coin throwing
     onScore?.(1); // 1 point per coin throw
+
+    // Create organic audio gesture instead of cheesy click
+    createOracleGesture(hexagramNumber);
+  };
+
+  const createOracleGesture = (hexagramNumber: number) => {
+    if (!audioContext) return;
+
+    const ctx = audioContext;
+    const now = ctx.currentTime;
+
+    // Create subtle, organic audio gesture based on hexagram
+    // Use filtered noise with harmonic envelope - more Cage-inspired
+
+    // Base frequency from hexagram number (create subtle harmonic relationship)
+    const baseFreq = 110 + (hexagramNumber * 7) % 440; // Subtle variation
+
+    // Create filtered noise burst - more organic than click
+    const bufferSize = ctx.sampleRate * 0.3; // 300ms
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    // Generate filtered noise with subtle harmonic content
+    for (let i = 0; i < bufferSize; i++) {
+      const t = i / ctx.sampleRate;
+      const envelope = Math.max(0, 1 - (t / 0.3)); // 300ms decay
+      const noise = (Math.random() * 2 - 1) * 0.3;
+
+      // Add subtle harmonic content based on hexagram
+      const harmonic = Math.sin(2 * Math.PI * baseFreq * t) * 0.2;
+      const secondary = Math.sin(2 * Math.PI * (baseFreq * 1.5) * t) * 0.1;
+
+      data[i] = (noise + harmonic + secondary) * envelope * 0.15; // Very quiet, organic
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+
+    // Apply gentle filtering to make it more organic
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(800, now);
+    filter.Q.setValueAtTime(0.7, now);
+
+    // Subtle stereo positioning based on hexagram
+    const panner = ctx.createStereoPanner();
+    panner.pan.setValueAtTime((hexagramNumber % 3 - 1) * 0.3, now); // Slight left/right variation
+
+    source.connect(filter);
+    filter.connect(panner);
+    panner.connect(ctx.destination);
+
+    source.start(now);
   };
 
   useEffect(() => {

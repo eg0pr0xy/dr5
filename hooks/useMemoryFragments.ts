@@ -1,62 +1,75 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { MemoryFragment } from '../types/audio';
 
-const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
-
-// Enhanced Rilke text generation synchronized with audio parameters
-const generateRilkeLine = (audioParams: {
+// Meditative word generation - contemplative emergence from sound
+const generatePresenceWord = (audioParams: {
   spectralCentroid: number;
   rms: number;
   grainRate: number;
   currentF0: number;
+  timeSinceStart: number;
 }): string => {
-  // Map audio parameters to Rilke's poetic vocabulary
-  const spectralCentroid = audioParams.spectralCentroid;
-  const rms = audioParams.rms;
-  const grainRate = audioParams.grainRate;
-  const currentF0 = audioParams.currentF0;
+  const { spectralCentroid, rms, grainRate, currentF0, timeSinceStart } = audioParams;
 
-  // Spectral brightness influences openness vs enclosure
-  const OPEN = spectralCentroid > 50 ? [
-    'BEAUTY', 'ANGEL', 'BREATH', 'SECRET', 'SILENCE', 'TERROR', 'FORM', 'OPEN', 'STATUE', 'DARK', 'MORNING', 'NIGHT'
+  // Temporal evolution - words change based on meditation duration
+  const meditationPhase = Math.floor(timeSinceStart / 30) % 7; // 7 phases of contemplation
+
+  // Spectral presence - how the sound fills space
+  const PRESENCE = spectralCentroid > 60 ? [
+    'HERE', 'PRESENT', 'MANIFEST', 'EMERGENT', 'REVEALED', 'APPEARING'
+  ] : spectralCentroid > 30 ? [
+    'QUIET', 'SUBTLE', 'GENTLE', 'SOFT', 'TENDER', 'DELICATE'
   ] : [
-    'CHAMBER', 'ROOM', 'DEPTHS', 'INTERIOR', 'CORE', 'CENTER', 'ABYSS', 'CAVERN', 'INNER_ROOM', 'SHADOW'
+    'DEEP', 'INNER', 'SILENT', 'HIDDEN', 'DORMANT', 'WAITING'
   ];
 
-  // RMS energy influences verb intensity
-  const VERB = rms > 0.1 ? [
-    'IS', 'BECOMES', 'DWELLS', 'RISES', 'WHISPERS', 'UNFOLDS', 'BURNS', 'LISTENS', 'EMERGES'
+  // Energy flow - how sound moves through time
+  const FLOW = rms > 0.15 ? [
+    'RISING', 'FLOWING', 'MOVING', 'SHIFTING', 'CHANGING', 'EVOLVING'
+  ] : rms > 0.08 ? [
+    'BREATHING', 'PULSING', 'WAVING', 'DRIFTING', 'GLIDING', 'FLOATING'
   ] : [
-    'SLEEPS', 'WAITS', 'RESTS', 'LINGERS', 'MURMURS', 'DREAMS', 'BREATHES', 'ECHOES'
+    'RESTING', 'WAITING', 'LISTENING', 'ATTENDING', 'OBSERVING', 'CONTEMPLATING'
   ];
 
-  // Grain rate influences quality
-  const QUAL = grainRate > 15 ? [
-    'TERRIBLE', 'INFINITE', 'INVISIBLE', 'INNER', 'RADIANT', 'INEFFABLE', 'QUIET', 'DREADFUL', 'SACRED'
+  // Texture quality - nature of the sound
+  const TEXTURE = grainRate > 20 ? [
+    'TEXTURED', 'GRAINED', 'PATTERNED', 'WOVEN', 'INTERWOVEN'
+  ] : grainRate > 10 ? [
+    'SMOOTH', 'CONTINUOUS', 'FLOWING', 'CONNECTED', 'LINKED'
   ] : [
-    'GENTLE', 'SOFT', 'QUIET', 'SUBTLE', 'TENDER', 'CALM', 'STILL', 'PEACEFUL'
+    'PURE', 'SINGLE', 'FOCUSED', 'CLEAR', 'DISTINCT'
   ];
 
-  // Fundamental frequency influences spatial relationships
-  const CLOSE = currentF0 > 150 ? [
-    'IN_US', 'IN_THE_OPEN', 'IN_THE_ROOM', 'BEYOND_WORDS', 'WITHOUT_END', 'AMONG_THINGS', 'UNDER_SKIN'
+  // Relational awareness - how elements connect
+  const RELATION = currentF0 > 200 ? [
+    'TOGETHER', 'CONNECTED', 'LINKED', 'JOINED', 'UNITED'
+  ] : currentF0 > 120 ? [
+    'RELATING', 'RESPONDING', 'ANSWERING', 'ECHOING', 'REFLECTING'
   ] : [
-    'IN_THE_DEPTHS', 'IN_THE_CORE', 'IN_THE_CHAMBER', 'WITHIN_THE_ROOM', 'IN_THE_SILENCE', 'IN_THE_CENTER'
+    'ALONE', 'SINGLE', 'SOLITARY', 'INDIVIDUAL', 'ONE'
   ];
 
-  // Templates that create meaningful relationships
+  // Meditative templates - simple, contemplative structures
   const TEMPLATES = [
-    () => `${pick(OPEN)} ${pick(VERB)} ${pick(QUAL)}`,
-    () => `${pick(OPEN)} ${pick(VERB)} ${pick(QUAL)} ${pick(CLOSE)}`,
-    () => `${pick(OPEN)} ${pick(VERB)} ${pick(CLOSE)}`,
-    () => `EVERY_${pick(OPEN)} ${pick(VERB)} ${pick(QUAL)}`,
-    () => 'YOU_MUST_CHANGE_YOUR_LIFE',
-    // New templates that respond to audio state
-    () => rms > 0.15 ? `${pick(OPEN)} ${pick(VERB)} LOUDER` : `${pick(OPEN)} ${pick(VERB)} QUIETER`,
-    () => spectralCentroid > 60 ? `${pick(OPEN)} ${pick(VERB)} BRIGHTER` : `${pick(OPEN)} ${pick(VERB)} DARKER`,
-    () => grainRate > 20 ? `${pick(OPEN)} ${pick(VERB)} MORE_FREQUENT` : `${pick(OPEN)} ${pick(VERB)} SPARINGLY`,
+    () => pick(PRESENCE),
+    () => `${pick(PRESENCE)} ${pick(FLOW)}`,
+    () => `${pick(TEXTURE)} ${pick(RELATION)}`,
+    () => `${pick(FLOW)} ${pick(PRESENCE)}`,
+    () => `LISTENING ${pick(RELATION)}`,
+    () => `SOUND ${pick(FLOW)}`,
+    () => `SILENCE ${pick(PRESENCE)}`,
+    () => `PRESENCE ${pick(TEXTURE)}`,
+    // Phase-dependent deep contemplation
+    () => meditationPhase === 0 ? 'BEGINNING' :
+         meditationPhase === 1 ? 'LISTENING' :
+         meditationPhase === 2 ? 'ATTENDING' :
+         meditationPhase === 3 ? 'OBSERVING' :
+         meditationPhase === 4 ? 'CONTEMPLATING' :
+         meditationPhase === 5 ? 'UNDERSTANDING' : 'BEING'
   ];
 
+  const pick = <T,>(arr: T[]) => arr[Math.floor(Math.random() * arr.length)];
   return pick(TEMPLATES)();
 };
 
@@ -68,43 +81,51 @@ export const useMemoryFragments = (audioParams?: {
 }) => {
   const [fragments, setFragments] = useState<MemoryFragment[]>([]);
   const lastAudioParams = useRef(audioParams);
+  const startTimeRef = useRef(Date.now());
 
   const updateFragments = useCallback(() => {
+    const timeSinceStart = (Date.now() - startTimeRef.current) / 1000; // seconds
+
     setFragments(prev => {
       const decayed = prev
         .map(f => ({
           ...f,
           life: f.life - 1,
-          opacity: f.opacity * 0.98, // Slower decay for contemplation
-          isVibrating: f.isVibrating && Math.random() > 0.3 // Vibrations persist longer
+          opacity: f.opacity * 0.99, // Very slow decay for deep contemplation
+          isVibrating: f.isVibrating && Math.random() > 0.4 // Gentle vibrations
         }))
         .filter(f => f.life > 0);
 
-      // Spawn rate based on audio activity - made more aggressive
-      const baseSpawnRate = 0.3; // Lower threshold for more frequent spawns
-      const audioActivity = audioParams ? (audioParams.rms * 2.0 + audioParams.grainRate / 20) : 0;
-      const activityThreshold = Math.max(0.1, baseSpawnRate - audioActivity); // Ensure minimum spawn chance
-      const spawns = Math.random() > activityThreshold ? (Math.random() > 0.7 ? 2 : 1) : 0;
+      // Meditative spawn rate - very gentle, contemplative emergence
+      const baseSpawnRate = 0.4; // Even gentler spawns
+      const audioActivity = audioParams ? (audioParams.rms * 1.5 + audioParams.grainRate / 30) : 0;
+      const activityThreshold = Math.max(0.15, baseSpawnRate - audioActivity); // More conservative
+      const spawns = Math.random() > activityThreshold ? 1 : 0;
 
-      // Guarantee at least occasional spawns even with no audio activity
-      const forceSpawn = Math.random() > 0.95; // 5% chance of forced spawn
-      const finalSpawns = spawns > 0 ? spawns : (forceSpawn ? 1 : 0);
+      // Guarantee occasional emergence even in silence
+      const meditationSpawn = Math.random() > 0.98; // 2% chance of contemplative emergence
+      const finalSpawns = spawns > 0 ? spawns : (meditationSpawn ? 1 : 0);
 
       for (let i = 0; i < finalSpawns; i++) {
         const params = audioParams || {
-          spectralCentroid: 50,
-          rms: 0.05,
-          grainRate: 8,
-          currentF0: 110
+          spectralCentroid: 40,
+          rms: 0.03,
+          grainRate: 6,
+          currentF0: 100
+        };
+
+        const wordParams = {
+          ...params,
+          timeSinceStart
         };
 
         decayed.push({
-          x: Math.floor(Math.random() * 80) + 10,
-          y: Math.floor(Math.random() * 80) + 10,
-          content: generateRilkeLine(params),
-          opacity: 1,
-          life: 15 + Math.random() * 25, // Longer lifespan for contemplation
-          isVibrating: params.rms > 0.1 || Math.random() > 0.7, // Vibrate with audio energy
+          x: Math.floor(Math.random() * 70) + 15, // More centered
+          y: Math.floor(Math.random() * 70) + 15,
+          content: generatePresenceWord(wordParams),
+          opacity: 0.7, // Start more subtle
+          life: 25 + Math.random() * 35, // Much longer contemplation time
+          isVibrating: params.rms > 0.08 || Math.random() > 0.85, // Rare, gentle vibrations
         });
       }
       return decayed;

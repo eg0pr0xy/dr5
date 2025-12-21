@@ -20,7 +20,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
   const [fmActive, setFmActive] = useState(false);
   const [subActive, setSubActive] = useState(true);
 
-  // Space Invaders game state
+  // Space Invaders Game State
   const [invaders, setInvaders] = useState(() => {
     const formation = [];
     for (let row = 0; row < 5; row++) {
@@ -44,38 +44,55 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
   const [formationDirection, setFormationDirection] = useState(1); // 1 = right, -1 = left
   const [formationStep, setFormationStep] = useState(0);
   const [descentCount, setDescentCount] = useState(0);
+  const [explosions, setExplosions] = useState([]);
+  const [score, setScore] = useState(0);
 
-  // Space Invaders game logic
+  // Space Invaders Game Logic
   useEffect(() => {
     const gameInterval = setInterval(() => {
       if (gameState !== 'playing') return;
 
+      // Move invaders (endless gameplay - no lose condition)
       setInvaders(prev => {
         const aliveInvaders = prev.filter(inv => inv.alive);
         if (aliveInvaders.length === 0) {
-          setGameState('won');
-          return prev;
-        }
-
-        // Check if any invader has reached the danger zone (lose condition)
-        const anyInvaderTooLow = prev.some(inv => inv.alive && inv.y >= 6);
-        if (anyInvaderTooLow) {
-          setGameState('lost');
+          // Auto-reset formation when all invaders destroyed
+          setTimeout(() => {
+            setInvaders(() => {
+              const formation = [];
+              for (let row = 0; row < 5; row++) {
+                for (let col = 0; col < 10; col++) {
+                  formation.push({
+                    id: `${row}-${col}-${Date.now()}`, // Unique ID for new formation
+                    x: col,
+                    y: row,
+                    type: row === 0 ? 'advanced' : row < 3 ? 'standard' : 'basic',
+                    alive: true
+                  });
+                }
+              }
+              return formation;
+            });
+          }, 1000); // Brief pause before new formation
           return prev;
         }
 
         return prev.map(invader => {
           if (!invader.alive) return invader;
 
-          let newX = invader.x + formationDirection * 0.3;
+          let newX = invader.x + formationDirection * 0.5;
           let newY = invader.y;
 
-          // Check horizontal boundaries
+          // Check horizontal boundaries and descend
           if (newX >= 9.5 || newX <= -0.5) {
-            // Reverse direction and descend the entire formation
             setFormationDirection(-formationDirection);
-            newY += 0.5; // Gradual descent
-            newX = Math.max(0, Math.min(9, invader.x)); // Reset to valid position
+            newY += 1; // Descend one row
+          }
+
+          // Wrap invaders back to top when they reach bottom (endless gameplay)
+          if (newY >= 7) {
+            newY = 0; // Reset to top
+            newX = Math.floor(Math.random() * 10); // Random horizontal position
           }
 
           return {
@@ -86,8 +103,8 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
         });
       });
 
-      // Invader shooting (less frequent)
-      if (Math.random() < 0.015) {
+      // Invader shooting (random)
+      if (Math.random() < 0.01) {
         const aliveInvaders = invaders.filter(inv => inv.alive);
         if (aliveInvaders.length > 0) {
           const shooter = aliveInvaders[Math.floor(Math.random() * aliveInvaders.length)];
@@ -96,8 +113,8 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
       }
 
       // Move bullets
-      setBullets(prev => prev.map(bullet => ({ ...bullet, y: bullet.y - 0.4 })).filter(bullet => bullet.y > -1));
-      setInvaderBullets(prev => prev.map(bullet => ({ ...bullet, y: bullet.y + 0.3 })).filter(bullet => bullet.y < 9));
+      setBullets(prev => prev.map(bullet => ({ ...bullet, y: bullet.y - 0.8 })).filter(bullet => bullet.y > -1));
+      setInvaderBullets(prev => prev.map(bullet => ({ ...bullet, y: bullet.y + 0.4 })).filter(bullet => bullet.y < 9));
 
       // Collision detection
       setBullets(prevBullets => {
@@ -109,37 +126,41 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
           );
 
           if (hitInvader) {
+            // Create explosion
+            setExplosions(prev => [...prev, { x: hitInvader.x, y: hitInvader.y, frame: 0 }]);
+
+            // Remove invader
             setInvaders(prev => prev.map(inv =>
               inv.id === hitInvader.id ? { ...inv, alive: false } : inv
             ));
+
+            // Award points based on invader type
+            const points = hitInvader.type === 'advanced' ? 30 : hitInvader.type === 'standard' ? 20 : 10;
+            setScore(prev => prev + points);
+
             return false; // Remove bullet
           }
           return true; // Keep bullet
         });
       });
 
-      // Check player hit
-      const playerHit = invaderBullets.some(bullet =>
-        Math.abs(bullet.x - playerShip.x) < 0.6 && Math.abs(bullet.y - playerShip.y) < 0.6
-      );
-      if (playerHit) {
-        setGameState('lost');
-      }
+      // No player hit logic - endless gameplay, player is immortal
 
-    }, 150); // Slightly slower for better gameplay
+      // Update explosions
+      setExplosions(prev => prev.map(exp => ({ ...exp, frame: exp.frame + 1 })).filter(exp => exp.frame < 6));
+
+    }, 100); // Game update rate
 
     return () => clearInterval(gameInterval);
   }, [invaders, formationDirection, gameState, playerShip]);
 
-  // Auto-shooting based on audio events
+  // Player auto-shooting
   useEffect(() => {
     if (gameState !== 'playing') return;
 
     const shootInterval = setInterval(() => {
-      if (Math.random() < 0.1) { // Random shooting
-        setBullets(prev => [...prev, { x: playerShip.x, y: playerShip.y, id: Date.now() }]);
-      }
-    }, 500);
+      setBullets(prev => [...prev, { x: playerShip.x, y: playerShip.y, id: Date.now() }]);
+    }, 800); // Shoot every 800ms
 
     return () => clearInterval(shootInterval);
   }, [gameState, playerShip]);
@@ -163,9 +184,11 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
     });
     setBullets([]);
     setInvaderBullets([]);
+    setExplosions([]);
     setGameState('playing');
     setFormationDirection(1);
     setDescentCount(0);
+    setScore(0);
   };
 
   const engineRef = useRef<{
@@ -443,10 +466,10 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
             return (
               <div
                 key={invader.id}
-                className="absolute text-current animate-pulse opacity-80"
+                className="absolute text-current opacity-90"
                 style={{
                   left: `${10 + invader.x * 8}%`,
-                  top: `${10 + invader.y * 8}%`,
+                  top: `${15 + invader.y * 10}%`,
                   fontSize: '12px',
                   fontWeight: 'bold'
                 }}
@@ -461,7 +484,7 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
             className="absolute text-current font-bold"
             style={{
               left: `${10 + playerShip.x * 8}%`,
-              top: `${10 + playerShip.y * 8}%`,
+              top: `${15 + playerShip.y * 10}%`,
               fontSize: '14px'
             }}
           >
@@ -472,10 +495,10 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
           {bullets.map(bullet => (
             <div
               key={bullet.id}
-              className="absolute text-current opacity-90"
+              className="absolute text-current opacity-80"
               style={{
                 left: `${10 + bullet.x * 8}%`,
-                top: `${10 + bullet.y * 8}%`,
+                top: `${15 + bullet.y * 10}%`,
                 fontSize: '8px'
               }}
             >
@@ -487,10 +510,10 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
           {invaderBullets.map(bullet => (
             <div
               key={bullet.id}
-              className="absolute text-current opacity-70 animate-pulse"
+              className="absolute text-current opacity-60"
               style={{
                 left: `${10 + bullet.x * 8}%`,
-                top: `${10 + bullet.y * 8}%`,
+                top: `${15 + bullet.y * 10}%`,
                 fontSize: '8px'
               }}
             >
@@ -498,26 +521,25 @@ const DroneMode: React.FC<DroneModeProps> = ({ audioContext, isAnimated, embedde
             </div>
           ))}
 
-          {/* Game Status */}
-          {gameState !== 'playing' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-80">
-              <div className="text-center">
-                <div className={`text-xl font-bold mb-4 ${gameState === 'won' ? 'text-green-400' : 'text-red-400'}`}>
-                  {gameState === 'won' ? 'VICTORY!' : 'GAME OVER'}
-                </div>
-                <div
-                  className="text-sm opacity-80 cursor-pointer hover:opacity-100"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    resetGame();
-                  }}
-                  style={{ pointerEvents: 'auto' }}
-                >
-                  [ CLICK TO RESTART ]
-                </div>
-              </div>
+          {/* Explosions - monochrome */}
+          {explosions.map(exp => (
+            <div
+              key={`exp-${exp.x}-${exp.y}`}
+              className="absolute text-current font-bold animate-pulse"
+              style={{
+                left: `${10 + exp.x * 8}%`,
+                top: `${15 + exp.y * 10}%`,
+                fontSize: '14px'
+              }}
+            >
+              {exp.frame === 0 ? '※' : exp.frame === 1 ? '*' : exp.frame === 2 ? '✱' : '·'}
             </div>
-          )}
+          ))}
+
+          {/* Score Display - always visible in endless mode */}
+          <div className="absolute top-4 right-4 text-current text-xs opacity-60">
+            SCORE: {score}
+          </div>
         </div>
 
         <div className="grid grid-cols-7 gap-x-6 gap-y-1 relative z-10 p-4">

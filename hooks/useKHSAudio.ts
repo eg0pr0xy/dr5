@@ -6,6 +6,8 @@ export const useKHSAudio = (audioContext: AudioContext | null) => {
   const engineRef = useRef<KHSAudioEngine | null>(null);
   const [diag, setDiag] = useState<KHSState>({ active: 0, centroid: 0, nextShift: 0, momentId: 0, fadePct: 0, shapeF: 0, shapeQ: 0, spectralDensity: [] });
   const [radioActive, setRadioActive] = useState(true);
+  const [radioState, setRadioState] = useState<string>('OFF');
+  const [radioTextureLevel, setRadioTextureLevel] = useState<number>(0);
 
   useEffect(() => {
     if (!audioContext) return;
@@ -38,5 +40,5 @@ export const useKHSAudio = (audioContext: AudioContext | null) => {
     engineRef.current.setRadioActive(radioActive);
   }, [radioActive]);
 
-  return { diag, radioActive, setRadioActive };
+  return { diag, radioActive, setRadioActive, radioState, radioTextureLevel };
 };
