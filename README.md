@@ -1,12 +1,11 @@
 
-# DR5 AUDIO INTERFACE
+# INSTRUMENT-DR5
 
-> **REVISION:** DR-5.CAGE_EDITION
-> **STATUS:** OPERATIONAL
-> **BUILD:** 2025-12-21 08:30 UTC+1
-> **SYSTEM:** EXPERIMENTAL WEB AUDIO INTERFACE
+> **REVISION:** DR-5.CAGE_EDITION  
+> **STATUS:** OPERATIONAL  
+> **SYSTEM:** RETRO-FUTURISTIC COMPUTATIONAL INSTRUMENT
 
-DR5 is an experimental web audio interface for contemplative listening, exploring Cagean indeterminacy through real-time DSP and ASCII visualisation. Designed for extended listening sessions, it requires careful technical setup for optimal performance. Performance may vary by device and browser.
+INSTRUMENT-DR5 is a mobile-first web interface designed for scientific observation and sonic meditation. It rejects modern UX convenience in favor of a rigid, grid-based "terminal instrument" aesthetic.
 
 ---
 
@@ -24,10 +23,9 @@ The DR5 station is not a musical tool in the traditional sense; it is a **Signal
 
 ### 1. RADIO_CORE (DRONE)
 
-The station's primary harmonic carrier with integrated Space Invaders gameplay.
+The stations primary harmonic carrier.
 - **Controls**: `DRIFT` level adjusts phase instability; `FM_MOD` adds metallic sidebands; `SUB_IN` toggles a 27.5Hz fundamental.
-- **Gameplay**: ASCII Space Invaders overlay - destroy invaders to earn points, avoid enemy fire.
-- **Visuals**: Vertical diagnostic of 6 harmonic bands + noise texture + real-time invader formation.
+- **Visuals**: A vertical diagnostic of 6 harmonic bands + noise texture.
 
 ### 2. ENVIRON
 A spatial resonance simulation that treats the interface as an acoustic room.
@@ -37,8 +35,9 @@ A spatial resonance simulation that treats the interface as an acoustic room.
 
 ### 3. MEMORY (THE PREPARED ROOM)
 
-An environmental feedback loop using the station's microphone for analysis only.
-- **Controls**: `GHOSTS` trigger rare aleatoric re-injection (5-15min intervals); `PIPS` are prepared sonic incidents.
+An environmental feedback loop using the stations microphone, with fallback material when permission is denied.
+- **Controls**: `GHOSTS` trigger aleatoric re-injection of recorded grains; `PIPS` are prepared sonic incidents.
+- **Signal Path**: analysis + prepared-room feedback. If mic input is blocked, an internal noise bed is engaged automatically so the mode remains audible.
 - **Visuals**: Fragments of "Cagean" text that vibrate when the room's memory is accessed.
 
 ### 4. GENERATIVE
@@ -48,17 +47,17 @@ Recursive cellular automata mapped to a harmonic filter bank.
 - **Visuals**: Scrolling automata grid where cell intensity matches spectral amplitude.
 
 ### 5. ORACLE
-A chance-based decision engine using authentic I-Ching hexagram generation.
-- **Logic**: 6-line hexagram generation via traditional coin method (3 coins per line).
+A chance-based decision engine derived from the I-Ching.
+- **Logic**: 6-line hexagram generation via binary "coin" tosses.
 - **Controls**: `HI_SENS` adjusts microphone threshold for "Mushroom" growth residues.
-- **Visuals**: Authentic hexagrams (broken/unbroken lines) and "growth residues" triggered by volume peaks.
+- **Visuals**: Static hexagrams and "growth residues" triggered by volume peaks.
 
 ### 6. KHS (STOCKHAUSEN HOMAGE)
-A speculative simulation of a 1950s Electronic Studio with long-form spectral evolution.
-- **Sonic Engine**: 14-partial Stockhausen-inspired harmonic field with moment-based evolution (60-180s states).
-- **Radio Integration**: SHORTWAVE_EMU provides bandpassed noise with AM modulation and tuning gaps (no network dependency).
-- **Controls**: Radio texture toggle; spectral evolution follows 20-60s crossfade transitions.
-- **Visuals**: ASCII matrix changes discretely at moment boundaries; ASCII diagnostics show current spectral bias.
+A speculative simulation of a 1950s Electronic Studio.
+- **Sonic Engine**: long-form moment system with additive sine clusters, saturation, and spectral emphasis.
+- **Radio Layer**: shortwave texture (offline emulation by default, no external stream required).
+- **Moment Timing**: 60-180s states with 20-60s transitions.
+- **Visuals**: discrete ASCII diagnostics + 24x8 density matrix derived from analyser bands.
 
 ---
 
@@ -82,43 +81,6 @@ A speculative simulation of a 1950s Electronic Studio with long-form spectral ev
 **DR5_STATION // CAGE_EDITION**
 
 ---
-
-## UI INVARIANTS (DO NOT BREAK)
-
-- Monospace only, ASCII-first visuals; grid overlay stays visible; no rounded corners, shadows, gradients, or icons.
-- Step-based motion only (150–600ms ticks); no smooth CSS transitions or rAF-driven UI loops; use discrete keyframe steps.
-- Navigation is minimal text toggles; mode switches must update the active view without gating or duplicated handlers.
-- Layout uses explicit grid/flex with `min-height: 0` scroll containers; no fixed heights without a scrollable region.
-- Respect vh/dvh quirks by keeping the root container height-managed and avoiding scroll hijacks on mobile.
-- Panels/ASCII blocks render with `white-space: pre` and snap to the grid; opacity/contrast controls should not change geometry.
-
----
-
-## DEPLOYMENT
-
-### GitHub Pages
-
-The project is configured for deployment to GitHub Pages at `https://eg0pr0xy.github.io/dr5/`.
-
-**Deploy Steps:**
-```bash
-# Install dependencies (including gh-pages)
-npm install
-
-# Build and deploy
-npm run deploy
-```
-
-**Configuration:**
-- Repository: `eg0pr0xy/dr5`
-- Branch: `gh-pages` (auto-created by gh-pages package)
-- Base path: `/dr5/` (automatically set for production builds)
-
-**GitHub Pages Setup:**
-1. Go to repository Settings → Pages
-2. Set source to "Deploy from a branch"
-3. Select "gh-pages" branch and "/ (root)" folder
-4. Save and wait for deployment
 
 ## PWA INSTALLATION
 

@@ -85,3 +85,65 @@ body {
   height: 44px;
   min-height: 44px;
 }
+
+/* Minimal poetic surface motion (step-based only) */
+@keyframes surface-hush {
+  0% { opacity: 0.1; }
+  33% { opacity: 0.18; }
+  66% { opacity: 0.12; }
+  100% { opacity: 0.2; }
+}
+
+@keyframes surface-scan {
+  0% { transform: translateY(-6%); opacity: 0.02; }
+  40% { opacity: 0.12; }
+  100% { transform: translateY(106%); opacity: 0.02; }
+}
+
+@keyframes readout-waver {
+  0% { opacity: 0.75; letter-spacing: 0.26em; }
+  50% { opacity: 0.95; letter-spacing: 0.3em; }
+  100% { opacity: 0.75; letter-spacing: 0.26em; }
+}
+
+.poetic-on .surface-shell {
+  position: relative;
+}
+
+.poetic-on .surface-shell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-top: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  opacity: 0.12;
+  animation: surface-hush 9s steps(6, end) infinite;
+}
+
+.surface-scanline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: currentColor;
+  opacity: 0;
+}
+
+.poetic-on .surface-scanline {
+  animation: surface-scan 12s steps(18, end) infinite;
+}
+
+.poetic-on .surface-readout {
+  animation: readout-waver 8s steps(8, end) infinite;
+}
+
+.poetic-on .surface-pane {
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent 0px,
+    transparent 5px,
+    rgba(255, 255, 255, 0.03) 6px
+  );
+}
