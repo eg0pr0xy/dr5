@@ -3,6 +3,7 @@ import type {
   AudioDirectorSnapshot,
   EnvironDiagnostics,
   GenerativeDiagnostics,
+  IntensityLevel,
   KHSDiagnostics,
   MemoryDiagnostics,
   ModeAudioContract,
@@ -38,6 +39,20 @@ const createNoiseBuffer = (ctx: AudioContext, seconds = 2, pink = false) => {
       data[i] = last;
     } else {
       data[i] = white;
+    }
+  }
+  return buffer;
+};
+
+const createImpulseResponse = (ctx: AudioContext, seconds = 4.5, decay = 2.5) => {
+  const length = Math.floor(ctx.sampleRate * seconds);
+  const buffer = ctx.createBuffer(2, length, ctx.sampleRate);
+  for (let ch = 0; ch < 2; ch += 1) {
+    const data = buffer.getChannelData(ch);
+    for (let i = 0; i < length; i += 1) {
+      const n = (Math.random() * 2) - 1;
+      const env = Math.pow(1 - (i / length), decay);
+      data[i] = n * env * (ch === 0 ? 1 : 0.93);
     }
   }
   return buffer;
@@ -156,7 +171,16 @@ class DroneEngine extends BaseModeEngine<RadioCoreDiagnostics> {
   private drift = 1;
   private fm = false;
   private sub = true;
+  private traunsteinActive = false;
+  private traunsteinIntensity: IntensityLevel = 'PRESENT';
   private subGain: GainNode | null = null;
+  private traunsteinA: OscillatorNode | null = null;
+  private traunsteinB: OscillatorNode | null = null;
+  private traunsteinNoise: AudioBufferSourceNode | null = null;
+  private traunsteinGain: GainNode | null = null;
+  private traunsteinFilter: BiquadFilterNode | null = null;
+  private traunsteinDelay: DelayNode | null = null;
+  private traunsteinFeedback: GainNode | null = null;
   private started = false;
 
   constructor() {
@@ -211,6 +235,48 @@ class DroneEngine extends BaseModeEngine<RadioCoreDiagnostics> {
     noiseGain.connect(this.filter);
     this.noise = noiseSource;
 
+    this.traunsteinA = ctx.createOscillator();
+    this.traunsteinA.type = 'triangle';
+    this.traunsteinA.frequency.setValueAtTime(38, ctx.currentTime);
+    const trAGain = ctx.createGain();
+    trAGain.gain.setValueAtTime(0.08, ctx.currentTime);
+
+    this.traunsteinB = ctx.createOscillator();
+    this.traunsteinB.type = 'sawtooth';
+    this.traunsteinB.frequency.setValueAtTime(57, ctx.currentTime);
+    const trBGain = ctx.createGain();
+    trBGain.gain.setValueAtTime(0.05, ctx.currentTime);
+
+    this.traunsteinNoise = ctx.createBufferSource();
+    this.traunsteinNoise.buffer = createNoiseBuffer(ctx, 3, true);
+    this.traunsteinNoise.loop = true;
+    const trNoiseGain = ctx.createGain();
+    trNoiseGain.gain.setValueAtTime(0.04, ctx.currentTime);
+
+    this.traunsteinFilter = ctx.createBiquadFilter();
+    this.traunsteinFilter.type = 'bandpass';
+    this.traunsteinFilter.frequency.setValueAtTime(160, ctx.currentTime);
+    this.traunsteinFilter.Q.setValueAtTime(5.5, ctx.currentTime);
+    this.traunsteinDelay = ctx.createDelay(1.2);
+    this.traunsteinDelay.delayTime.setValueAtTime(0.34, ctx.currentTime);
+    this.traunsteinFeedback = ctx.createGain();
+    this.traunsteinFeedback.gain.setValueAtTime(0.36, ctx.currentTime);
+    this.traunsteinGain = ctx.createGain();
+    this.traunsteinGain.gain.setValueAtTime(0, ctx.currentTime);
+
+    this.traunsteinA.connect(trAGain);
+    trAGain.connect(this.traunsteinFilter);
+    this.traunsteinB.connect(trBGain);
+    trBGain.connect(this.traunsteinFilter);
+    this.traunsteinNoise.connect(trNoiseGain);
+    trNoiseGain.connect(this.traunsteinFilter);
+    this.traunsteinFilter.connect(this.traunsteinDelay);
+    this.traunsteinDelay.connect(this.traunsteinFeedback);
+    this.traunsteinFeedback.connect(this.traunsteinDelay);
+    this.traunsteinFilter.connect(this.traunsteinGain);
+    this.traunsteinDelay.connect(this.traunsteinGain);
+    this.traunsteinGain.connect(this.filter);
+
     return {
       ...base,
       dispose: () => {
@@ -233,6 +299,9 @@ class DroneEngine extends BaseModeEngine<RadioCoreDiagnostics> {
       try { lfo.start(now); } catch {}
     });
     try { this.noise?.start(now); } catch {}
+    try { this.traunsteinA?.start(now); } catch {}
+    try { this.traunsteinB?.start(now); } catch {}
+    try { this.traunsteinNoise?.start(now); } catch {}
 
     const stepId = window.setInterval(() => {
       if (!this.ctx) return;
@@ -248,6 +317,16 @@ class DroneEngine extends BaseModeEngine<RadioCoreDiagnostics> {
         const det = ((Math.random() - 0.5) * 16) * this.drift;
         osc.detune.setTargetAtTime(det, t, 0.2 + (i * 0.03));
       });
+      const intensityScale = this.traunsteinIntensity === 'CALM' ? 0.55 : this.traunsteinIntensity === 'PRESENT' ? 0.9 : 1.35;
+      const activeGain = this.traunsteinActive ? (0.08 * intensityScale) : 0;
+      this.traunsteinGain?.gain.setTargetAtTime(activeGain, t, 0.14);
+      this.traunsteinFilter?.frequency.setTargetAtTime(clampHz(this.ctx, 120 + (Math.random() * 520 * intensityScale)), t, 0.14);
+      this.traunsteinFilter?.Q.setTargetAtTime(4 + (Math.random() * 6 * intensityScale), t, 0.16);
+      this.traunsteinDelay?.delayTime.setTargetAtTime(0.24 + (Math.random() * 0.32), t, 0.18);
+      this.traunsteinFeedback?.gain.setTargetAtTime(this.traunsteinActive ? Math.min(0.72, 0.22 + (0.24 * intensityScale)) : 0.12, t, 0.18);
+      const trBase = 31 + ((this.signalStrength / 100) * 22);
+      this.traunsteinA?.frequency.setTargetAtTime(trBase, t, 0.1);
+      this.traunsteinB?.frequency.setTargetAtTime(trBase * (1.46 + (Math.random() * 0.08)), t, 0.1);
     }, 450);
     this.trackInterval(stepId);
 
@@ -278,6 +357,9 @@ class DroneEngine extends BaseModeEngine<RadioCoreDiagnostics> {
       this.oscillators.forEach((osc) => { try { osc.stop(); } catch {} });
       this.lfos.forEach((lfo) => { try { lfo.stop(); } catch {} });
       try { this.noise?.stop(); } catch {}
+      try { this.traunsteinA?.stop(); } catch {}
+      try { this.traunsteinB?.stop(); } catch {}
+      try { this.traunsteinNoise?.stop(); } catch {}
       this.started = false;
     }, 260);
     this.trackTimeout(killId as unknown as number);
@@ -293,6 +375,10 @@ class DroneEngine extends BaseModeEngine<RadioCoreDiagnostics> {
       if (this.subGain) {
         this.subGain.gain.setTargetAtTime(this.sub ? 0.18 : 0, this.ctx.currentTime, 0.12);
       }
+    }
+    if (typeof params.traunsteinActive === 'boolean') this.traunsteinActive = params.traunsteinActive;
+    if (params.traunsteinIntensity === 'CALM' || params.traunsteinIntensity === 'PRESENT' || params.traunsteinIntensity === 'HAUNTED') {
+      this.traunsteinIntensity = params.traunsteinIntensity;
     }
     if (this.fm) {
       this.oscillators.forEach((osc, i) => {
@@ -325,6 +411,8 @@ class DroneEngine extends BaseModeEngine<RadioCoreDiagnostics> {
       resonance: this.resonance,
       stepType: this.stepType,
       signalStrength: this.signalStrength,
+      traunsteinActive: this.traunsteinActive,
+      traunsteinIntensity: this.traunsteinIntensity,
     };
   }
 }
@@ -497,14 +585,22 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
   private sourceType: 'MIC' | 'FALLBACK' = 'FALLBACK';
   private micStream: MediaStream | null = null;
   private micSource: MediaStreamAudioSourceNode | null = null;
+  private micPre: GainNode | null = null;
   private inputBus!: GainNode;
   private analyser!: AnalyserNode;
   private feedbackDelay!: DelayNode;
   private feedbackGain!: GainNode;
+  private memoryDelay!: DelayNode;
+  private memoryFeedback!: GainNode;
+  private hallConvolver!: ConvolverNode;
+  private hallWet!: GainNode;
+  private hallDry!: GainNode;
   private grainRate = 0;
   private feedback = 0.2;
   private ghostUntil = 0;
   private f0 = 110;
+  private memorySec = 10;
+  private reverbMix = 0.28;
   private rms = 0;
   private fallbackNoiseGain: GainNode | null = null;
   private roomNoiseSource: AudioBufferSourceNode | null = null;
@@ -528,12 +624,22 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
     bp.frequency.setValueAtTime(520, ctx.currentTime);
     bp.Q.setValueAtTime(8, ctx.currentTime);
 
-    this.feedbackDelay = ctx.createDelay(2.0);
+    this.feedbackDelay = ctx.createDelay(3.0);
     this.feedbackDelay.delayTime.setValueAtTime(0.24, ctx.currentTime);
     this.feedbackGain = ctx.createGain();
     this.feedbackGain.gain.setValueAtTime(this.feedback, ctx.currentTime);
+    this.memoryDelay = ctx.createDelay(24.0);
+    this.memoryDelay.delayTime.setValueAtTime(this.memorySec, ctx.currentTime);
+    this.memoryFeedback = ctx.createGain();
+    this.memoryFeedback.gain.setValueAtTime(0.48, ctx.currentTime);
+    this.hallConvolver = ctx.createConvolver();
+    this.hallConvolver.buffer = createImpulseResponse(ctx, 6.5, 3.1);
+    this.hallWet = ctx.createGain();
+    this.hallWet.gain.setValueAtTime(this.reverbMix, ctx.currentTime);
+    this.hallDry = ctx.createGain();
+    this.hallDry.gain.setValueAtTime(1 - this.reverbMix, ctx.currentTime);
     const blend = ctx.createGain();
-    blend.gain.setValueAtTime(0.58, ctx.currentTime);
+    blend.gain.setValueAtTime(0.66, ctx.currentTime);
 
     this.analyser = ctx.createAnalyser();
     this.analyser.fftSize = 512;
@@ -543,8 +649,18 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
     bp.connect(this.feedbackDelay);
     this.feedbackDelay.connect(this.feedbackGain);
     this.feedbackGain.connect(bp);
-    this.feedbackDelay.connect(blend);
-    bp.connect(blend);
+    bp.connect(this.memoryDelay);
+    this.memoryDelay.connect(this.memoryFeedback);
+    this.memoryFeedback.connect(this.memoryDelay);
+    bp.connect(this.hallDry);
+    this.feedbackDelay.connect(this.hallDry);
+    this.memoryDelay.connect(this.hallDry);
+    bp.connect(this.hallConvolver);
+    this.feedbackDelay.connect(this.hallConvolver);
+    this.memoryDelay.connect(this.hallConvolver);
+    this.hallConvolver.connect(this.hallWet);
+    this.hallDry.connect(blend);
+    this.hallWet.connect(blend);
     blend.connect(this.analyser);
     this.analyser.connect(this.output);
 
@@ -578,6 +694,11 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
         try { bp.disconnect(); } catch {}
         try { this.feedbackDelay.disconnect(); } catch {}
         try { this.feedbackGain.disconnect(); } catch {}
+        try { this.memoryDelay.disconnect(); } catch {}
+        try { this.memoryFeedback.disconnect(); } catch {}
+        try { this.hallConvolver.disconnect(); } catch {}
+        try { this.hallWet.disconnect(); } catch {}
+        try { this.hallDry.disconnect(); } catch {}
         try { blend.disconnect(); } catch {}
         try { this.analyser.disconnect(); } catch {}
         super.stop();
@@ -591,10 +712,10 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
     try {
       this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.micSource = this.ctx.createMediaStreamSource(this.micStream);
-      const pre = this.ctx.createGain();
-      pre.gain.setValueAtTime(1.4, this.ctx.currentTime);
-      this.micSource.connect(pre);
-      pre.connect(this.inputBus);
+      this.micPre = this.ctx.createGain();
+      this.micPre.gain.setValueAtTime(1.6, this.ctx.currentTime);
+      this.micSource.connect(this.micPre);
+      this.micPre.connect(this.inputBus);
       this.sourceType = 'MIC';
     } catch {
       this.ensureFallback('MIC_DENIED');
@@ -618,11 +739,21 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
       this.feedbackDelay.delayTime.setTargetAtTime(0.12 + ((idx % 4) * 0.07), t, 0.09);
       this.feedback = 0.14 + (((idx % 3) * 0.08) + (this.rms * 0.7));
       this.feedbackGain.gain.setTargetAtTime(Math.min(0.82, this.feedback), t, 0.12);
+      const lengthTarget = 8 + ((idx % 6) * 2.2) + Math.min(6, this.rms * 30);
+      this.memorySec = Number(lengthTarget.toFixed(1));
+      this.memoryDelay.delayTime.setTargetAtTime(Math.min(22, this.memorySec), t, 0.22);
+      const longFb = Math.min(0.78, 0.34 + (this.rms * 1.1));
+      this.memoryFeedback.gain.setTargetAtTime(longFb, t, 0.18);
+      const reverbTarget = Math.min(0.66, 0.2 + (this.rms * 2.8));
+      this.reverbMix = Number(reverbTarget.toFixed(2));
+      this.hallWet.gain.setTargetAtTime(this.reverbMix, t, 0.2);
+      this.hallDry.gain.setTargetAtTime(1 - this.reverbMix, t, 0.2);
       idx += 1;
       if (Math.random() > 0.76) {
         const ghostDur = 0.5 + (Math.random() * 0.9);
         this.ghostUntil = t + ghostDur;
         this.feedbackGain.gain.setTargetAtTime(Math.min(0.92, this.feedback + 0.12), t, 0.02);
+        this.memoryFeedback.gain.setTargetAtTime(Math.min(0.86, longFb + 0.08), t, 0.06);
       }
       if (this.sourceType === 'FALLBACK' && this.fallbackNoiseGain) {
         const pulse = 0.045 + (Math.random() * 0.04);
@@ -631,6 +762,32 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
       this.output.gain.setTargetAtTime(0.7 + ((idx % 2) * 0.08), t, 0.1);
     }, 420);
     this.trackInterval(stepId);
+  }
+
+  public override setParams(params: Record<string, unknown>): void {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    if (params.memoryProfile === 'SHORT') {
+      this.memorySec = 6.5;
+    } else if (params.memoryProfile === 'LONG') {
+      this.memorySec = 18;
+    }
+    if (typeof params.memorySec === 'number') {
+      this.memorySec = Math.max(4, Math.min(22, params.memorySec));
+    }
+    if (params.hall === 'LOW') {
+      this.reverbMix = 0.18;
+    } else if (params.hall === 'MID') {
+      this.reverbMix = 0.32;
+    } else if (params.hall === 'HIGH') {
+      this.reverbMix = 0.52;
+    }
+    if (typeof params.reverbMix === 'number') {
+      this.reverbMix = Math.max(0.05, Math.min(0.75, params.reverbMix));
+    }
+    this.memoryDelay.delayTime.setTargetAtTime(this.memorySec, t, 0.18);
+    this.hallWet.gain.setTargetAtTime(this.reverbMix, t, 0.2);
+    this.hallDry.gain.setTargetAtTime(1 - this.reverbMix, t, 0.2);
   }
 
   public override stop(): void {
@@ -642,6 +799,7 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
     const id = window.setTimeout(() => {
       try { this.roomNoiseSource?.stop(); } catch {}
       try { this.micStream?.getTracks().forEach((track) => track.stop()); } catch {}
+      try { this.micPre?.disconnect(); } catch {}
       this.started = false;
     }, 280);
     this.trackTimeout(id as unknown as number);
@@ -654,6 +812,9 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
     if (this.fallbackNoiseGain) {
       this.fallbackNoiseGain.gain.setTargetAtTime(0.065, this.ctx.currentTime, 0.12);
     }
+    this.memoryFeedback.gain.setTargetAtTime(0.6, this.ctx.currentTime, 0.12);
+    this.hallWet.gain.setTargetAtTime(0.42, this.ctx.currentTime, 0.12);
+    this.hallDry.gain.setTargetAtTime(0.58, this.ctx.currentTime, 0.12);
   }
 
   public override getDiagnostics(): MemoryDiagnostics {
@@ -665,6 +826,8 @@ class MemoryEngine extends BaseModeEngine<MemoryDiagnostics> {
       feedback: Number(this.feedback.toFixed(2)),
       ghostUntil: Math.max(0, Math.ceil(this.ghostUntil - (this.ctx?.currentTime ?? 0))),
       f0: this.f0,
+      memorySec: this.memorySec,
+      reverbMix: this.reverbMix,
     };
   }
 }
@@ -834,6 +997,7 @@ class OracleEngine extends BaseModeEngine<OracleDiagnostics> {
   private text = 'LISTEN_FOR_EVENT';
   private rms = 0;
   private highSens = false;
+  private concreteIntensity: IntensityLevel = 'PRESENT';
   private started = false;
   private phaseStep = 0;
   private densityGlyph: '░' | '▒' | '▓' | '█' = '░';
@@ -1011,14 +1175,16 @@ class OracleEngine extends BaseModeEngine<OracleDiagnostics> {
       this.droneB?.frequency.setTargetAtTime(base * (1.48 + ((this.driftIndex % 3) * 0.07)), t, 0.1);
 
       const densityFactor = this.densityGlyph === '░' ? 0.2 : this.densityGlyph === '▒' ? 0.45 : this.densityGlyph === '▓' ? 0.7 : 1.0;
-      this.droneAGain?.gain.setTargetAtTime(0.035 + (densityFactor * 0.022), t, 0.08);
-      this.droneBGain?.gain.setTargetAtTime(0.015 + (densityFactor * 0.02), t, 0.08);
-      this.tapeGain?.gain.setTargetAtTime(0.02 + (densityFactor * 0.035), t, 0.08);
-      this.concreteDryGain?.gain.setTargetAtTime(0.03 + (densityFactor * 0.06), t, 0.08);
+      const intensityScale = this.concreteIntensity === 'CALM' ? 0.55 : this.concreteIntensity === 'PRESENT' ? 1 : 1.45;
+      this.droneAGain?.gain.setTargetAtTime((0.035 + (densityFactor * 0.022)) * intensityScale, t, 0.08);
+      this.droneBGain?.gain.setTargetAtTime((0.015 + (densityFactor * 0.02)) * intensityScale, t, 0.08);
+      this.tapeGain?.gain.setTargetAtTime((0.02 + (densityFactor * 0.035)) * intensityScale, t, 0.08);
+      this.concreteDryGain?.gain.setTargetAtTime((0.03 + (densityFactor * 0.06)) * intensityScale, t, 0.08);
       this.concreteDelay?.delayTime.setTargetAtTime(0.12 + ((this.driftIndex % 5) * 0.05), t, 0.12);
-      this.concreteFeedback?.gain.setTargetAtTime(0.22 + (densityFactor * 0.32), t, 0.12);
+      this.concreteFeedback?.gain.setTargetAtTime(Math.min(0.84, (0.22 + (densityFactor * 0.32)) * (0.8 + (0.4 * intensityScale))), t, 0.12);
       this.concreteResonators.forEach((bp, i) => {
-        const targetF = clampHz(this.ctx!, (190 + (i * 140)) * (0.9 + (Math.random() * 0.35)));
+        const spread = 0.25 + (0.2 * intensityScale);
+        const targetF = clampHz(this.ctx!, (190 + (i * 140)) * (0.9 + (Math.random() * spread)));
         bp.frequency.setTargetAtTime(targetF, t, 0.14);
       });
       this.phaseStep = (this.phaseStep + 1) % 1000;
@@ -1053,6 +1219,9 @@ class OracleEngine extends BaseModeEngine<OracleDiagnostics> {
       if (this.ctx && this.micGain) {
         this.micGain.gain.setTargetAtTime(this.highSens ? 6.8 : 4.2, this.ctx.currentTime, 0.12);
       }
+    }
+    if (params.concreteIntensity === 'CALM' || params.concreteIntensity === 'PRESENT' || params.concreteIntensity === 'HAUNTED') {
+      this.concreteIntensity = params.concreteIntensity;
     }
     if (params.throw === true) this.throwCoins();
   }
@@ -1113,6 +1282,7 @@ class OracleEngine extends BaseModeEngine<OracleDiagnostics> {
       matrix24x8: [...this.matrix24x8],
       densityGlyph: this.densityGlyph,
       phaseStep: this.phaseStep,
+      concreteIntensity: this.concreteIntensity,
     };
   }
 }
@@ -1428,6 +1598,8 @@ const createDefaultModeDiagnostics = (): ModeDiagnosticsMap => ({
     resonance: 0,
     stepType: 'IDLE',
     signalStrength: 0,
+    traunsteinActive: false,
+    traunsteinIntensity: 'PRESENT',
   },
   [Mode.ENVIRON]: {
     outDb: -120,
@@ -1450,6 +1622,8 @@ const createDefaultModeDiagnostics = (): ModeDiagnosticsMap => ({
     feedback: 0,
     ghostUntil: 0,
     f0: 0,
+    memorySec: 10,
+    reverbMix: 0.28,
   },
   [Mode.GENERATIVE]: {
     outDb: -120,
@@ -1473,6 +1647,7 @@ const createDefaultModeDiagnostics = (): ModeDiagnosticsMap => ({
     matrix24x8: Array.from({ length: 8 }, () => '.'.repeat(24)),
     densityGlyph: '░',
     phaseStep: 0,
+    concreteIntensity: 'PRESENT',
   },
   [Mode.KHS]: {
     outDb: -120,

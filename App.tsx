@@ -28,11 +28,11 @@ const createEmptySnapshot = (): AudioDirectorSnapshot => ({
   fallback: false,
   fallbackReason: null,
   mode: {
-    [Mode.DRONE]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, bars: new Array(7).fill(0), cutoff: 0, resonance: 0, stepType: 'IDLE', signalStrength: 0 },
+    [Mode.DRONE]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, bars: new Array(7).fill(0), cutoff: 0, resonance: 0, stepType: 'IDLE', signalStrength: 0, traunsteinActive: false, traunsteinIntensity: 'PRESENT' },
     [Mode.ENVIRON]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, matrix: Array.from({ length: 12 }, () => '.'.repeat(12)), activeCells: 0, roomFlux: 0, pressure: 0 },
-    [Mode.MEMORY]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, rms: 0, source: 'FALLBACK', grainRate: 0, feedback: 0, ghostUntil: 0, f0: 0 },
+    [Mode.MEMORY]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, rms: 0, source: 'FALLBACK', grainRate: 0, feedback: 0, ghostUntil: 0, f0: 0, memorySec: 10, reverbMix: 0.28 },
     [Mode.GENERATIVE]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, rows: Array.from({ length: 18 }, () => '.'.repeat(14)), rule: 110, invert: false, bandAmps: new Array(7).fill(0) },
-    [Mode.ORACLE]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, rms: 0, source: 'FALLBACK', hexagram: [0, 0, 0, 0, 0, 0], text: 'LISTEN_FOR_EVENT', matrix24x8: Array.from({ length: 8 }, () => '.'.repeat(24)), densityGlyph: '░', phaseStep: 0 },
+    [Mode.ORACLE]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, rms: 0, source: 'FALLBACK', hexagram: [0, 0, 0, 0, 0, 0], text: 'LISTEN_FOR_EVENT', matrix24x8: Array.from({ length: 8 }, () => '.'.repeat(24)), densityGlyph: '░', phaseStep: 0, concreteIntensity: 'PRESENT' },
     [Mode.KHS]: { outDb: -120, modeOut: 'SILENT', fallback: false, fallbackReason: null, momentIndex: 1, momentTotal: 12, spectralBias: 'LOW', densityGlyph: '░', widthBar: 'L▯▯▯▯▯R', transitionProgress: 0, nextBoundarySec: 0, matrix24x8: Array.from({ length: 8 }, () => '.'.repeat(24)) },
   },
 });

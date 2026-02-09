@@ -1,6 +1,7 @@
 import { Mode } from '../types';
 
 export type ModeOutputState = 'ACTIVE' | 'SILENT' | 'FALLBACK';
+export type IntensityLevel = 'CALM' | 'PRESENT' | 'HAUNTED';
 
 export interface ModeAudioContract {
   outDb?: number;
@@ -15,6 +16,8 @@ export interface RadioCoreDiagnostics extends ModeAudioContract {
   resonance: number;
   stepType: string;
   signalStrength: number;
+  traunsteinActive: boolean;
+  traunsteinIntensity: IntensityLevel;
 }
 
 export interface EnvironDiagnostics extends ModeAudioContract {
@@ -31,6 +34,8 @@ export interface MemoryDiagnostics extends ModeAudioContract {
   feedback?: number;
   ghostUntil?: number;
   f0?: number;
+  memorySec?: number;
+  reverbMix?: number;
   bufFill?: number;
   lastGhost?: string;
   currentStep?: number;
@@ -53,6 +58,7 @@ export interface OracleDiagnostics extends ModeAudioContract {
   matrix24x8: string[];
   densityGlyph: '░' | '▒' | '▓' | '█';
   phaseStep: number;
+  concreteIntensity: IntensityLevel;
 }
 
 export type SpectralBias = 'LOW' | 'MID' | 'HIGH';
@@ -151,6 +157,7 @@ export interface AudioEngineNodes {
   resWet?: GainNode;
   resDry?: GainNode;
   scheduler: GrainScheduler;
+  internalWriter?: number | null;
 }
 
 export interface KHSState {
@@ -168,3 +175,4 @@ export interface KHSModeProps {
   isAnimated?: boolean;
   embedded?: boolean;
 }
+
